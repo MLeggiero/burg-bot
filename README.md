@@ -1,406 +1,234 @@
 # burg-bot
 
-An autonomous differential-drive robot with a face.
+A TurtleBot3-Burger-style differential-drive robot running ROS 2 Jazzy, with a
+full autonomy stack, an expressive animated face, and camera-based semantic
+mapping.
 
-A TurtleBot3-Burger-style robot running the full ROS 2 autonomy stack — SLAM,
-AMCL, Nav2 with custom planner and controller plugins — plus an expression
-system that gives it a character rather than just a status LED.
+The robot maps a space on its own — no joystick, no waypoints — while a 7"
+display gives it a face that reacts to what it is actually doing, and a depth
+camera labels the objects it finds and pins them to the map.
 
-The autonomy stack is derived from Antonio Brandi's excellent course
-[Self-Driving and ROS 2 — Learn by Doing! Plan & Navigation][course]
-([repo][upstream], Apache-2.0), renamed `bumperbot_*` → `burgerbot_*` and
-adapted for this robot's hardware. The expression system is new.
+<p align="center">
+  <img src="docs/media/mapping.gif" width="45%" alt="Autonomous frontier exploration building an occupancy grid">
+  <img src="docs/media/expression_cycle.gif" width="45%" alt="Face expression cycle">
+</p>
 
-[course]: https://www.udemy.com/course/self-driving-and-ros-2-learn-by-doing-plan-navigation/
-[upstream]: https://github.com/AntoBrandi/Self-Driving-and-ROS-2-Learn-by-Doing-Plan-Navigation
+**Left:** autonomous frontier exploration in Gazebo. The occupancy grid fills
+in from the lidar, the orange trail is the robot's actual driven path, the blue
+square is the robot, and the dark disc is the obstacle it routes around.
+**Right:** the procedural face cycling its expression library.
 
 ---
 
-## The expression system
+## Credit
 
-Most robot faces are a screensaver: a loop of pre-rendered clips playing
-independently of what the robot is doing. This one is wired to real state, and
-it moves the body as well as the screen.
+The physical robot design and the foundational ROS 2 packages come from
+**Antonio Brandi's** excellent course, *Self-Driving and ROS 2 — Learn by Doing!
+Plan & Navigation*:
 
-The design follows [Disney Research's expressive-robot work][disney]: an
-animator authors motion freely, and a separate physics-aware layer reconciles
-it with what the body can actually do. Neither layer compromises for the other.
-Here that maps to:
+- Course: <https://www.udemy.com/course/self-driving-and-ros-2-learn-by-doing-plan-navigation/>
+- Source: <https://github.com/AntoBrandi/Self-Driving-and-ROS-2-Learn-by-Doing-Plan-Navigation>
 
-| Disney | burg-bot |
-|---|---|
-| Animator authors expressive motion | Gesture library + parametric face poses |
-| RL policy enforces physical constraints | `twist_mux` priority + safety-stop + lidar clearance gate |
-| 4-DOF head, antennae | 800×480 procedural face |
-| Expressive gait | Expressive base motion layered under navigation |
+This repository builds on that foundation. The split is:
 
-[disney]: https://spectrum.ieee.org/disney-robot
+| Derived from the course | Original to this repository |
+| --- | --- |
+| `burgerbot_description` — URDF, meshes, Gazebo | `burgerbot_face` — procedural face renderer |
+| `burgerbot_controller` — diff-drive, twist_mux | `burgerbot_expressions` — mood arbiter, gestures |
+| `burgerbot_firmware` — Pico interface, IMU | `burgerbot_exploration` — frontier exploration |
+| `burgerbot_localization` — EKF, AMCL | `burgerbot_perception` — detection, semantic map |
+| `burgerbot_mapping` — slam_toolbox | `burgerbot_msgs` — expression/semantic interfaces |
+| `burgerbot_navigation` — Nav2 configuration | Docker dev environment, Gazebo testbed |
+| `burgerbot_utils` — lidar safety stop | `screen_link` / camera additions to the URDF |
 
-### The face
-
-Two light-blue ovals on black. No mouth, no eyebrows — which is a constraint
-worth keeping, because it forces every emotion through eye geometry, and eyes
-are what people actually read.
-
-Everything is drawn from primitives and driven by parameters, so any two
-expressions blend continuously. A sprite-sheet face can only cut between fixed
-states, and that is what makes most robot faces look like a slideshow.
-
-Ten expressions (`neutral, happy, curious, focused, confused, startled, sad,
-sleepy, determined, error`) are keyframes in
-[`expressions.py`](burgerbot_ws/src/burgerbot_face/burgerbot_face/expressions.py) —
-edit that one file to retune the robot's personality. On top of the pose sit
-five composited animation layers, and these matter more than the keyframes do:
-
-| Layer | What it does |
-|---|---|
-| **Blink** | Poisson-timed, ~4 s mean, asymmetric close/open. Never metronomic — regularity is what reads as a machine cycling |
-| **Idle** | Two incommensurate sine waves, so the "breathing" never visibly loops |
-| **Gaze** | Tracks a world-frame point through TF, plus microsaccades — real eyes are never still even when fixating |
-| **Motion** | Inertia from `cmd_vel`: turning left slides the face right, braking squashes it |
-| **Reaction** | Transient additive impulses (recoil, shake, squash) that always decay to nothing |
-
-The best trick is **anticipation**: gaze leads a turn *before* the body
-rotates, read off the curvature of the planned path. It fights the inertia
-layer, which pulls the other way — eyes ahead, body trailing. That opposition
-is what sells it, and it is nearly free because Nav2 already publishes the plan.
-
-### What the face is reacting to
-
-Nothing here is decorative. If the eyes look unsure it is because the pose
-covariance genuinely grew.
-
-| Signal | Reaction |
-|---|---|
-| `navigate_to_pose` status | `focused` while running, `happy` on success, `sad` on abort |
-| `/scan` nearest obstacle | `startled` inside the danger radius; eyes track the nearest thing |
-| `/cmd_vel` + `/plan` | squash-stretch, lean, gaze lead |
-| `/amcl_pose` covariance | `confused`, scaled by how lost it actually is |
-| `/battery_state` | `sleepy` when low, `error` when critical |
-| safety-stop | `startled` |
-| screen touch | `happy` + a bounce |
-
-Sources bid with a **priority and a TTL**, and one wins. Without that
-arbitration the face flickers between competing publishers, which reads as
-broken rather than conflicted. It is the same shape as `twist_mux` arbitrating
-velocity, applied to expression.
-
-### Body gestures
-
-`nod_yes`, `shake_no`, `wiggle`, `curious_tilt`, `celebrate`, `anticipate`,
-`recoil` — short authored `Twist` sequences played through the `PlayGesture`
-action.
-
-Gestures are written as pure character motion with **no awareness of the
-world**. Three separate things make them safe:
-
-1. They publish to `gesture_vel`, the **lowest-priority** `twist_mux` input.
-   Navigation and the operator's joystick both outrank them.
-2. The `safety_stop` lock in `twist_mux` overrides every input.
-3. `gesture_server` checks lidar clearance before and during, so it *declines*
-   rather than merely being overridden — a gesture that gets silently
-   suppressed mid-motion looks like a malfunction.
-
-```bash
-ros2 topic pub --once /gesture std_msgs/String "{data: wiggle}"
-```
+Course exercise code that the production stack supersedes (hand-written A*,
+Dijkstra, pure-pursuit and PD controllers, a from-scratch Kalman filter and
+occupancy-grid mapper) has been removed — Nav2, `robot_localization` and
+`slam_toolbox` do those jobs here. Those implementations are worth studying in
+the original repository.
 
 ---
 
 ## Hardware
 
 | Part | Notes |
-|---|---|
-| Raspberry Pi 4 | Ubuntu 24.04 Server arm64 + ROS 2 Jazzy |
-| Raspberry Pi Pico (RP2040) | Motor control + encoders, USB CDC to the Pi |
-| Official Pi 7" Touch Display | 800×480, DSI ribbon — the face |
-| 2D lidar (RPLidar A1) | SLAM, AMCL, obstacle avoidance, gaze targets |
-| MPU6050 IMU | Fused with wheel odometry in the EKF |
-| DC gearmotors + quadrature encoders | Driven by an L298N-style H-bridge |
+| --- | --- |
+| Raspberry Pi 4 (4 GB) | Main compute, Ubuntu 24.04 Server |
+| Raspberry Pi Pico | Motor control and encoders over serial |
+| DC motors + encoders | Differential drive |
+| 2D lidar | SLAM and obstacle avoidance |
+| MPU6050 IMU | Fused with wheel odometry via EKF |
+| Official Pi 7" touch display | The face, over DSI ribbon |
+| Intel RealSense D435 | Object detection and 3D projection |
 
-### ⚠️ Before first power-on
-
-**The Pico is 3.3 V and its GPIOs are not 5 V tolerant.** The Arduino Uno this
-design came from was. Many geared motors ship with 5 V hall encoders — those
-need a level shifter or divider on A and B, or they will damage the Pico.
-
-**Check your power budget.** The 7" panel draws roughly 500 mA on top of the Pi
-and the motors. Brownouts under motor load present as random Pi reboots, which
-is a genuinely confusing thing to debug if you have not ruled it out first.
+The Pi 4 has no GPU or NPU, which shapes the perception design: inference is
+throttled to ~1.5 Hz rather than run per frame, because objects worth labelling
+on a map do not move fast.
 
 ---
 
-## Setup
+## What it does
 
-### 1. Development machine (Windows + WSL2) — containerized
+### Autonomous mapping
 
-The course targets Jazzy on Ubuntu 24.04; your WSL2 distro is likely a
-different release with no ROS installed. Rather than adding a second WSL
-distro just to get the right Ubuntu version, Jazzy runs in a **container** on
-top of whatever WSL2 distro you already have (Docker Engine runs natively in
-WSL2 — no Docker Desktop needed):
+`burgerbot_exploration` finds the boundaries between known-free and unknown
+space, scores each by size and distance, and sends the winner to Nav2. It stops
+when no frontier remains — which is also what guarantees no unexplored pockets
+are left behind.
 
-```bash
-sudo apt update && sudo apt install -y docker.io docker-compose-v2
-sudo usermod -aG docker $USER   # log out/in, or `newgrp docker`, for this to take effect
-```
+Frontier detection and scoring are pure functions over an occupancy grid
+(`frontier.py`), unit-tested on synthetic grids with no ROS graph running. The
+node is a thin wrapper that reads the map, calls into that module, and
+dispatches goals.
 
-Then, from the repo root:
+### Expressive face
 
-```bash
-./scripts/dev_container.sh
-```
+Two light-blue ovals on black. No mouth — people read eyes far more strongly
+than mouths, and a face with no mouth never lands in the uncanny valley of a
+bad one. Every emotion comes out of eye geometry, timing, and motion.
 
-First run builds the image (Nav2, SLAM, `ros2_control`, `twist_mux`, Gazebo
-integration — resolved via `rosdep` straight from this workspace's own
-`package.xml` files, so the image can't quietly drift out of sync with what
-the packages actually declare). After that you're in a shell with the ROS 2
-underlay sourced and `/workspace` bind-mounted to the repo:
+<p align="center">
+  <img src="docs/media/nervous_idle.gif" width="40%" alt="Nervous expression idle motion">
+</p>
 
-```bash
-colcon_build          # alias for: colcon build --symlink-install && source install/setup.bash
-ros2 launch burgerbot_bringup simulated_robot.launch.py
-```
+Expression is honest telemetry, not decoration. Each mood traces back to
+something true about the robot: navigation status, lidar proximity, pose
+covariance, battery level, touch. Sources bid with a priority and an expiry and
+exactly one wins, the same shape as `twist_mux` arbitrating velocity commands —
+without that, the face flickers between competing sources and reads as broken
+rather than alive.
 
-Gazebo, RViz, and the windowed face demo all render through **WSLg** — the
-container mounts `/mnt/wslg` (X11 + Wayland sockets) and `/usr/lib/wsl` (the
-D3D12/dxcore GPU driver WSLg uses; there's no `/dev/dri` under WSLg, and
-that's expected, not a misconfiguration) straight through at the same paths.
-Sanity check GPU passthrough with `glxinfo | grep renderer` inside the
-container — it should name a `D3D12` device, not `llvmpipe` (software
-rendering; RViz and Gazebo will limp along at a few fps if you see this).
+During a mapping sweep the face is neutral on a clean run and **nervous** —
+narrowed, with fast sway and quick blinks — when something comes within half a
+metre.
 
-`docker-compose.yml` uses `network_mode: host`, which is deliberate: ROS 2's
-DDS discovery is multicast-based, and under Docker's default bridge network
-each `docker compose run` gets an isolated network namespace and can't see
-another terminal's nodes. Host networking puts every container invocation on
-one ROS graph, which is the point of running Gazebo in one terminal and Nav2
-in another.
+### Semantic mapping
 
-Prefer bare-metal WSL instead? A second `Ubuntu-24.04` distro
-(`wsl --install -d Ubuntu-24.04`) plus `ros-jazzy-desktop` and the same apt
-list as the Pi below works exactly the way it always has — the container is a
-convenience, not a requirement. Either way, if you do work outside the
-container: **clone into the WSL filesystem (`~/burg-bot`), not `/mnt/c`.**
-Building a ROS workspace across the Windows filesystem boundary is
-dramatically slower — the container's bind mount pays this cost too, so if
-`colcon build` feels sluggish, it's worth cloning into `~/burg-bot` and
-pointing the container's volume mount there instead.
+<p align="center">
+  <img src="docs/media/camera_pov.gif" width="55%" alt="Robot camera point of view while exploring">
+</p>
 
-### 2. Raspberry Pi 4
+A YOLOv8n detector runs on the colour stream; detections are back-projected to
+3D using the aligned depth image and a pinhole model, transformed into the map
+frame, and folded into a persistent de-duplicated object layer that saves as
+`objects.yaml` alongside the SLAM map.
 
-Flash **Ubuntu 24.04 Server arm64**, then:
-
-```bash
-sudo apt install -y ros-jazzy-ros-base ros-jazzy-nav2-bringup ros-jazzy-navigation2 ros-jazzy-slam-toolbox ros-jazzy-robot-localization ros-jazzy-ros2-control ros-jazzy-ros2-controllers ros-jazzy-twist-mux ros-jazzy-rplidar-ros python3-pygame libserial-dev
-```
-
-Match the ROS distro on both sides. Cross-distro DDS is not guaranteed to
-interoperate, and the failures are subtle.
-
-### 3. The DSI panel
-
-Add to `/boot/firmware/config.txt`:
-
-```
-dtoverlay=vc4-kms-v3d
-dtoverlay=vc4-kms-dsi-7inch
-```
-
-Reboot, then confirm the panel is there:
-
-```bash
-modetest -M vc4 -c | grep -A2 connected
-```
-
-No desktop environment is needed. SDL renders straight to the panel through
-KMS/DRM, which is why the robot can run Ubuntu Server and still have a face.
-
-Give yourself DRM access:
-
-```bash
-sudo usermod -aG video,render,input $USER
-```
-
-### 4. Flash the Pico
-
-Open
-[`burgerbot_pico.ino`](burgerbot_ws/src/burgerbot_firmware/firmware/burgerbot_pico/burgerbot_pico.ino)
-in the Arduino IDE with the **earlephilhower Raspberry Pi Pico/RP2040** core
-installed. Select *Raspberry Pi Pico*, hold BOOTSEL while plugging in, Upload.
-
-Pin assignments and the calibration constants are at the top of the sketch.
-
-Pin the serial device so it does not move around:
-
-```bash
-echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", SYMLINK+="burgerbot_pico"' | sudo tee /etc/udev/rules.d/99-burgerbot.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-### 5. Build
-
-Dev machine, in the container (`./scripts/dev_container.sh` drops you into a
-shell with this already sourced):
-
-```bash
-./scripts/fetch_sim_assets.sh    # dev machine only; ~117MB of Gazebo world assets
-colcon_build                     # alias: colcon build --symlink-install && source install/setup.bash
-```
-
-Pi, or bare-metal dev machine:
-
-```bash
-git clone <this repo> ~/burg-bot && cd ~/burg-bot
-cd burgerbot_ws
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
-```
+The object layer is deliberately parallel to the occupancy grid rather than
+part of it — a probability grid is not a place to store "this cell is a chair."
 
 ---
 
-## Calibration — do this before trusting anything
+## Verified results
 
-Three numbers determine whether the robot goes where it thinks it does.
-Everything downstream — odometry, the EKF, AMCL, the costmap — inherits any
-error in them.
+From the Gazebo testbed (`test_room.world`, a 4×4 m room with one obstacle and
+a chair), all committed under `burgerbot_ws/src/burgerbot_mapping/maps/test_room/`:
 
-1. **`ENCODER_TICKS_PER_REV`** in the Pico sketch. Mark a wheel, turn it exactly
-   ten revolutions by hand, read the reported position, divide by ten.
-2. **`wheel_radius` and `wheel_separation`** in
-   [`burgerbot_controllers.yaml`](burgerbot_ws/src/burgerbot_controller/config/burgerbot_controllers.yaml).
-   Measure them; do not inherit the upstream `0.033` / `0.17`. A wheel constant
-   5% out sends the robot in a slow curve when told to drive straight.
-3. **The screen mount** in
-   [`burgerbot_screen.xacro`](burgerbot_ws/src/burgerbot_description/urdf/burgerbot_screen.xacro).
-   The defaults are a plausible front mount, not your robot. If the panel
-   overhangs further than assumed, raise `robot_radius` in the Nav2 costmap
-   configs to match — a footprint that excludes the display is exactly how a
-   robot clips doorframes it thinks it is clearing.
+- **Mapping:** 81×81 cells at 5 cm resolution — a 4.05 m square, matching the
+  room as designed.
+- **Detection:** the chair recognised at 0.88–0.95 confidence.
+- **Semantic map:** tracked to `(-1.42, -1.32, 0.42)` against a true placement
+  of `(-1.2, -1.2)`, from 9 observations.
 
-Sanity checks:
-
-```bash
-ros2 control list_hardware_interfaces
-ros2 topic echo /burgerbot_controller/odom --field pose.pose.position
-```
-
-Push the robot a measured 2 m and spin it 360°; odometry should roughly agree.
+The ~0.2 m offset is expected: depth is sampled at the bounding-box centre, so
+the point lands on whichever surface faces the robot, not the object's centroid.
 
 ---
 
-## Running
+## Quick start
 
-### Simulation
-
-```bash
-ros2 launch burgerbot_bringup simulated_robot.launch.py
-```
-
-Gazebo, Nav2, RViz, and the face in a desktop window. Add `use_slam:=true` to
-map instead of localize. `use_face:=false` / `use_expressions:=false` to drop
-either half.
-
-### Real robot
+Everything runs in a container — the workspace targets Ubuntu 24.04 / ROS 2
+Jazzy, which need not match your host.
 
 ```bash
-ros2 launch burgerbot_bringup real_robot.launch.py use_slam:=true
+docker compose run --rm dev bash
 ```
 
-Drive it around with the joystick to build a map, then save it:
+Then inside:
 
 ```bash
-ros2 run nav2_map_server map_saver_cli -f ~/burg-bot/maps/home
+cd /workspace/burgerbot_ws && colcon build --symlink-install && source install/setup.bash
 ```
 
-Then navigate on the saved map:
+Autonomous mapping demo (Gazebo + SLAM + Nav2 + exploration + face):
 
 ```bash
-ros2 launch burgerbot_bringup real_robot.launch.py use_slam:=false
+ros2 launch burgerbot_bringup testbed.launch.py
 ```
 
-### Face only, no robot
+Add object detection and semantic labelling:
 
-The iteration loop for animation work — no ROS graph, no hardware:
+```bash
+ros2 launch burgerbot_bringup testbed.launch.py use_perception:=true
+```
+
+On the real robot:
+
+```bash
+ros2 launch burgerbot_bringup real_robot.launch.py
+```
+
+Tune the face with no robot and no ROS graph attached:
 
 ```bash
 ros2 run burgerbot_face demo_expressions
 ```
 
-Number keys select expressions, arrows steer the gaze, `[` `]` and `,` `.`
-simulate turning and accelerating so you can see the inertia layer respond.
+### Object detection model
 
-Reference renders, headless:
+The detector needs a TFLite model, which is generated rather than committed:
 
 ```bash
-python3 -m burgerbot_face.demo_expressions --dump-dir /tmp/faces
+./scripts/export_detection_model.sh
 ```
+
+This exports YOLOv8n through ONNX and `onnx2tf`. It ships the **float32**
+variant. The int8 model is also produced but is not loadable: XNNPACK cannot
+delegate its quantized Transpose ops, and with the delegate disabled the
+reference sigmoid kernel rejects its output scale (it requires exactly 1/256).
+No delegate setting satisfies both. At the pipeline's 1.5 Hz throttle, float32
+fits a Pi 4 comfortably.
 
 ---
 
-## Verification
-
-```bash
-colcon test --packages-select burgerbot_expressions && colcon test-result --verbose
-```
-
-The gesture tests assert that oscillating gestures integrate to zero net
-displacement. That is not a formality — it caught a real bug where `wiggle`'s
-decaying envelope left the robot yawed a few degrees every time it played,
-which would have slowly corrupted odometry for reasons nothing in the
-navigation stack could explain.
-
-End-to-end, in order:
-
-1. **Sim** — SLAM a world, save the map, relocalize, navigate around an
-   obstacle, watch the face track it all.
-2. **Robot** — same, on the real panel.
-3. **Degradation** — kill `face_node` mid-navigation. Navigation must continue
-   unaffected. The expression layer is strictly additive and never load-bearing.
-
----
-
-## Layout
+## Repository layout
 
 ```
-docker/Dockerfile           dev/sim container image (Jazzy + WSLg passthrough)
-docker-compose.yml          container run config -- network_mode: host for DDS
-scripts/dev_container.sh    ./scripts/dev_container.sh  -> shell in the container
-scripts/fetch_sim_assets.sh restores the vendored AWS RoboMaker world assets
-
 burgerbot_ws/src/
-├── burgerbot_bringup/        top-level launch
-├── burgerbot_description/    URDF, meshes, Gazebo worlds, screen_link
-├── burgerbot_msgs/           interfaces, including the expression messages
-├── burgerbot_firmware/       Pico sketch + ros2_control SystemInterface
-├── burgerbot_controller/     diff_drive_controller, twist_mux, joy teleop
-├── burgerbot_localization/   EKF (wheel odom + IMU) and AMCL
-├── burgerbot_mapping/        slam_toolbox
-├── burgerbot_planning/       A* / Dijkstra Nav2 global planner plugins
-├── burgerbot_motion/         pure pursuit / PD Nav2 controller plugins
-├── burgerbot_navigation/     Nav2 servers, costmaps, behavior trees
-├── burgerbot_utils/          safety stop
-├── burgerbot_face/           procedural face renderer          [new]
-└── burgerbot_expressions/    mood arbiter + gesture server     [new]
+  burgerbot_bringup       Top-level launches: real robot, simulation, testbed
+  burgerbot_controller    Diff-drive control, twist_mux, noisy-odometry demo
+  burgerbot_description   URDF, meshes, Gazebo worlds
+  burgerbot_exploration   Frontier-based autonomous mapping
+  burgerbot_expressions   Mood arbitration and expressive gestures
+  burgerbot_face          Procedural face renderer for the 7" panel
+  burgerbot_firmware      Pico serial interface, ros2_control hardware, IMU
+  burgerbot_localization  EKF sensor fusion and AMCL
+  burgerbot_mapping       slam_toolbox, map saving, saved maps
+  burgerbot_msgs          Expression, gaze, touch and semantic interfaces
+  burgerbot_navigation    Nav2 configuration and behaviour trees
+  burgerbot_perception    Object detection, 3D projection, semantic map
+  burgerbot_utils         Lidar-based safety stop
+docker/                   Container image and entrypoint
+scripts/                  Model export, demo capture, container helper
+docs/media/               README animations
 ```
 
-Nav2 planner and controller plugins are C++ because `pluginlib` has no Python
-loader. The expression system is Python, where iteration speed matters more
-than microseconds.
-
-### Performance
-
-The face composites and draws in ~2.4 ms/frame at 2× supersampling on a desktop
-x86 core. The Pi 4 is roughly 5–10× slower at this, so expect 12–24 ms — viable
-at the default 45 fps, but measure. If it cannot hold frame rate, set
-`supersample: 1` in
-[`face.yaml`](burgerbot_ws/src/burgerbot_face/config/face.yaml); it is the
-single biggest lever.
-
 ---
+
+## Notes
+
+The demo GIFs are captured by subscribing to ROS topics
+(`scripts/capture_demo_gifs.py`), not by screen-recording Gazebo. Desktop
+capture via `ffmpeg x11grab` produces solid black under WSLg — its compositor
+never populates the legacy X11 root-window buffer, so there is nothing to grab
+regardless of GPU or software rendering. Reading `/map` and the camera stream
+needs no display at all and works headless.
+
+`base_footprint_noisy` appearing as a detached frame in RViz is expected: it is
+a deliberately noise-corrupted odometry pose from the course's
+`noisy_controller`, feeding the EKF so the filtered estimate can be compared
+against raw drift. It has no children, so RViz draws it as a lone triad that
+wanders as noise accumulates.
 
 ## License
 
-Apache-2.0. Portions derived from [AntoBrandi/Self-Driving-and-ROS-2][upstream],
-also Apache-2.0, with original authorship retained in each package manifest.
+Apache-2.0, matching the upstream course code.

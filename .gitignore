@@ -18,8 +18,7 @@ recordings/
 
 # Maps captured from real runs are machine-specific; commit deliberately.
 burgerbot_ws/src/burgerbot_mapping/maps/*/
-!burgerbot_ws/src/burgerbot_mapping/maps/small_house/
-!burgerbot_ws/src/burgerbot_mapping/maps/small_warehouse/
+!burgerbot_ws/src/burgerbot_mapping/maps/test_room/
 
 # Python
 __pycache__/

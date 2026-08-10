@@ -1,0 +1,15 @@
+objects:
+- id: chair_0
+  label: chair
+  x: -1.424782289862704
+  y: -1.3190194625031513
+  z: 0.42075036503506835
+  confidence: 0.9000216788715787
+  observation_count: 9
+- id: chair_1
+  label: chair
+  x: -1.9204866519257497
+  y: -1.3986194517763493
+  z: 0.4616453772179998
+  confidence: 0.8280705114205679
+  observation_count: 6

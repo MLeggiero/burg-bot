@@ -63,7 +63,11 @@ class ObjectTracker:
     #: object gets split into several IDs as detections jitter around its
     #: true position; too large and two real nearby objects of the same
     #: class (two chairs at a table) merge into one.
-    match_radius: float = 0.5
+    #:
+    #: Needs to clear the object's own width, not just jitter: the observed
+    #: point is on whichever surface faces the robot, so it slides across
+    #: the object as the robot moves around it.
+    match_radius: float = 0.8
     #: Detections below this confidence are dropped before they ever reach
     #: matching -- a low-confidence false positive shouldn't get to seed a
     #: brand new tracked object, only reinforce or be absorbed by a real one.

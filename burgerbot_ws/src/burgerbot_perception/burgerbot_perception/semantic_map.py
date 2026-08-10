@@ -51,7 +51,7 @@ class SemanticMapNode(Node):
         self.declare_parameter("min_confidence", 0.4)
         self.declare_parameter("min_observations_for_display", 2)
         self.declare_parameter("publish_rate", 2.0)
-        self.declare_parameter("map_name", "small_house")
+        self.declare_parameter("map_name", "test_room")
         # Default alongside the SLAM maps this workspace already saves to
         # (see burgerbot_mapping/maps/) -- kept as its own parameter rather
         # than hardcoded so a map saved somewhere else still works.

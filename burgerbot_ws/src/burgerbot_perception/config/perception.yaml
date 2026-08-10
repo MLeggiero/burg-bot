@@ -56,7 +56,13 @@ semantic_map:
     # physical object, not a new one. Too small and one real object splits
     # into several IDs as detections jitter; too large and two distinct
     # nearby objects of the same class merge into one.
-    match_radius: 0.5
+    #
+    # Has to exceed the object's own physical width, not just detection
+    # jitter: object_projector samples depth at the bounding-box centre, so
+    # it returns a point on whichever surface currently faces the robot, and
+    # that point moves across the object as the robot circles it. At 0.5 the
+    # test-room chair reproducibly split into two tracks 0.51m apart.
+    match_radius: 0.8
     min_confidence: 0.4
 
     # A single glimpse can be a false positive; require at least this many
@@ -67,7 +73,7 @@ semantic_map:
 
     # Where saved objects.yaml lands, alongside the SLAM map of the same
     # name -- see burgerbot_mapping/maps/.
-    map_name: "small_house"
+    map_name: "test_room"
 
     # 0 disables pruning. Set to something like 300 if the robot revisits
     # the same space repeatedly and old, no-longer-true detections

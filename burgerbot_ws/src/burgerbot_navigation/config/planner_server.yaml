@@ -4,14 +4,6 @@ planner_server:
     use_sim_time: true
     planner_plugins: ["GridBased"]
 
-    # Dijkstra Planner parameters
-    # GridBased:
-    #   plugin: "burgerbot_planning::DijkstraPlanner"
-
-    # A* Planner parameters
-    # GridBasedFast:
-    #   plugin: "burgerbot_planning::AStarPlanner"
-
     # Smac 2D parameters
     GridBased:
       plugin: "nav2_smac_planner::SmacPlanner2D" # In Iron and older versions, "/" was used instead of "::"

@@ -22,10 +22,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   # Perception / semantic mapping
   "msg/SemanticObject.msg"
   "msg/SemanticMap.msg"
-  # Course interfaces
-  "action/Fibonacci.action"
-  "srv/AddTwoInts.srv"
-  "srv/GetTransform.srv"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs
 )
 

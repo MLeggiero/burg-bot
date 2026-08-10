@@ -25,6 +25,26 @@ def generate_launch_description():
     use_face = LaunchConfiguration("use_face")
     use_expressions = LaunchConfiguration("use_expressions")
     use_perception = LaunchConfiguration("use_perception")
+    world_name = LaunchConfiguration("world_name")
+    goal_timeout = LaunchConfiguration("goal_timeout")
+
+    world_name_arg = DeclareLaunchArgument(
+        "world_name",
+        default_value="test_room",
+        description="Gazebo world from burgerbot_description/worlds. "
+        "'test_room' is a 4x4m room; 'tugbot_warehouse' is a ~25x40m "
+        "warehouse whose models are fetched from Fuel on first launch.",
+    )
+    # Scales with the space, not the robot: a warehouse frontier can be 20m+
+    # away, far longer than the room-sized default allows, and a goal that
+    # times out gets blacklisted as unreachable even when the robot was
+    # driving toward it perfectly well.
+    goal_timeout_arg = DeclareLaunchArgument(
+        "goal_timeout",
+        default_value="60.0",
+        description="Exploration goal timeout in seconds. Raise it for "
+        "large worlds; 240 is a reasonable starting point for the warehouse.",
+    )
 
     use_face_arg = DeclareLaunchArgument(
         "use_face",
@@ -52,7 +72,7 @@ def generate_launch_description():
             "launch",
             "gazebo.launch.py",
         ),
-        launch_arguments={"world_name": "test_room"}.items(),
+        launch_arguments={"world_name": world_name}.items(),
     )
 
     controller = IncludeLaunchDescription(
@@ -111,7 +131,10 @@ def generate_launch_description():
             "launch",
             "explore.launch.py",
         ),
-        launch_arguments={"use_sim_time": "true"}.items(),
+        launch_arguments={
+            "use_sim_time": "true",
+            "goal_timeout": goal_timeout,
+        }.items(),
     )
 
     rviz = Node(
@@ -166,6 +189,8 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            world_name_arg,
+            goal_timeout_arg,
             use_face_arg,
             use_expressions_arg,
             use_perception_arg,

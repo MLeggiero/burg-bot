@@ -134,6 +134,41 @@ the point lands on whichever surface faces the robot, not the object's centroid.
 
 ---
 
+### Warehouse world (work in progress)
+
+A second, much larger environment is included — roughly 25 × 40 m of
+industrial space with shelving rows, pallets and a parked Tugbot, assembled
+from OpenRobotics' *Tugbot in Warehouse* Fuel models:
+
+```bash
+ros2 launch burgerbot_bringup testbed.launch.py world_name:=tugbot_warehouse goal_timeout:=240.0
+```
+
+**Status: the world is solid, autonomous mapping in it is not yet.** What
+works: the world loads, all seven Fuel models download and cache, the robot
+spawns correctly in the central aisle, and Nav2, the controllers, SLAM and the
+recovery behaviours all come up healthy. The camera confirms the scene renders
+properly and the lidar reads it correctly — 278 of 360 beams returning between
+3.1 and 11.9 m.
+
+What does not: `slam_toolbox` does not grow the map here. It stays at roughly
+1,000 free cells through several full in-place rotations, so frontier
+exploration has nothing to target and the robot stays put. Scans are not being
+dropped and the sensor registers normally, so the cause is in map integration
+rather than sensing. Unresolved.
+
+Two genuine exploration bugs surfaced while chasing this and are fixed, both
+of which affect any large or slow-loading world:
+
+- Completion was declared against an all-unknown map, before SLAM had
+  processed its first scan, and that completion latched permanently. It now
+  waits for real free space and recovers if a frontier reappears.
+- A standing start could deadlock: no map means no frontier, no frontier means
+  no goal, no goal means no motion, and `slam_toolbox` needs 0.5 m of motion
+  before taking another scan. The explorer now rotates in place to break that
+  cycle. `test_room` only ever escaped it by luck, its first frontier landing
+  at 0.46 m against a 0.4 m floor.
+
 ## Quick start
 
 Everything runs in a container — the workspace targets Ubuntu 24.04 / ROS 2
@@ -196,7 +231,7 @@ fits a Pi 4 comfortably.
 burgerbot_ws/src/
   burgerbot_bringup       Top-level launches: real robot, simulation, testbed
   burgerbot_controller    Diff-drive control, twist_mux, noisy-odometry demo
-  burgerbot_description   URDF, meshes, Gazebo worlds
+  burgerbot_description   URDF, meshes, Gazebo worlds (test_room, tugbot_warehouse)
   burgerbot_exploration   Frontier-based autonomous mapping
   burgerbot_expressions   Mood arbitration and expressive gestures
   burgerbot_face          Procedural face renderer for the 7" panel

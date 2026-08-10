@@ -37,7 +37,7 @@ frontier_explorer:
     # How long to see zero frontiers before declaring the sweep complete,
     # rather than on the very first empty result -- guards against a
     # transient gap right after SLAM starts, before the first map arrives.
-    empty_grace_period: 10.0
+    empty_grace_period: 25.0
 
     # Publish ExpressionCommand (curious while exploring, happy when done) if
     # burgerbot_expressions is running. Purely cosmetic; safe to leave on

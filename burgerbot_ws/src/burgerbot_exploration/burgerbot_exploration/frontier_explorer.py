@@ -28,6 +28,7 @@ import threading
 import time
 from typing import List, Optional, Tuple
 
+import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
@@ -86,6 +87,9 @@ class FrontierExplorer(Node):
         # sweep complete. Guards against giving up during a transient gap
         # right after SLAM starts, before the first map has arrived.
         self.declare_parameter("empty_grace_period", 10.0)
+        # Bootstrap rotation from a standing start. See _handle_nothing_found.
+        self.declare_parameter("bootstrap_spins", 3)
+        self.declare_parameter("bootstrap_min_free_cells", 1500)
         self.declare_parameter("publish_expressions", True)
 
         self._map_frame = self.get_parameter("map_frame").value
@@ -95,6 +99,7 @@ class FrontierExplorer(Node):
         self._exploring = False
         self._empty_since: Optional[float] = None
         self._done = False
+        self._bootstrap_spins = 0
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -154,6 +159,26 @@ class FrontierExplorer(Node):
             return
 
         grid = self._latest_map
+        occupied_threshold = int(self.get_parameter("occupied_threshold").value)
+
+        # An all-unknown grid is SLAM not having processed a scan yet, not a
+        # finished sweep. slam_toolbox publishes /map as soon as it activates,
+        # before the first scan lands, and a grid with no free cells can hold
+        # no frontiers by definition -- so without this the completion clock
+        # starts against an empty map and the explorer can declare victory
+        # before it has ever seen anything. Cheap to rule out, and it is
+        # exactly what happened the first time this ran in the warehouse,
+        # where startup is slow enough for that window to exceed the grace
+        # period.
+        cells = np.asarray(grid.data, dtype=np.int16)
+        free_cells = int(((cells >= 0) & (cells < occupied_threshold)).sum())
+        if free_cells == 0:
+            self.get_logger().info(
+                "map has no free space yet, waiting for SLAM",
+                throttle_duration_sec=10.0,
+            )
+            return
+
         frontiers = find_frontiers(
             grid.data,
             grid.info.width,
@@ -163,7 +188,7 @@ class FrontierExplorer(Node):
             grid.info.origin.position.y,
             pose[0],
             pose[1],
-            occupied_threshold=int(self.get_parameter("occupied_threshold").value),
+            occupied_threshold=occupied_threshold,
             min_cluster_size=int(self.get_parameter("min_cluster_size").value),
         )
         min_size = int(self.get_parameter("min_frontier_size").value)
@@ -179,27 +204,75 @@ class FrontierExplorer(Node):
         )
 
         if choice is None:
-            self._handle_nothing_found()
+            self._handle_nothing_found(free_cells)
             return
 
+        # A frontier appeared, so any earlier "sweep complete" was premature:
+        # drop back into exploring rather than staying finished forever.
+        if self._done:
+            self.get_logger().info("new frontier appeared, resuming exploration")
         self._empty_since = None
+        self._done = False
+        # Real progress, so the bootstrap budget is available again if the
+        # robot later ends up somewhere the map has nothing useful to say.
+        self._bootstrap_spins = 0
         self._drive_to(choice)
 
-    def _handle_nothing_found(self) -> None:
+    def _handle_nothing_found(self, free_cells: int) -> None:
+        # Break the standing-start deadlock before considering the sweep done.
+        #
+        # slam_toolbox only folds in a new scan once the robot has travelled
+        # minimum_travel_distance (0.5m). If its very first scan arrives
+        # before the simulated lidar is producing returns, the map stays
+        # nearly empty -- and an empty map has no frontier, no frontier means
+        # no goal, no goal means no motion, and no motion means SLAM never
+        # takes another scan. The robot sits still forever with a perfectly
+        # healthy lidar. Measured in the warehouse: 278 of 360 beams
+        # returning 3-12m, and a map holding 1055 free and 2 occupied cells.
+        #
+        # Turning on the spot is the way out: it needs no map to plan, Nav2's
+        # behavior server will always accept it, and one revolution hands
+        # SLAM a full sweep to build from. test_room only ever avoided this
+        # by luck, its first frontier landing at 0.46m against a 0.4m floor.
+        bootstrap_limit = int(self.get_parameter("bootstrap_spins").value)
+        min_free = int(self.get_parameter("bootstrap_min_free_cells").value)
+        if free_cells < min_free and self._bootstrap_spins < bootstrap_limit:
+            self._bootstrap_spins += 1
+            self.get_logger().info(
+                f"map nearly empty ({free_cells} free cells), spinning to give "
+                f"SLAM a first look ({self._bootstrap_spins}/{bootstrap_limit})"
+            )
+            self._exploring = True
+            try:
+                self._navigator.spin(spin_dist=math.pi)
+                deadline = time.monotonic() + 30.0
+                while not self._navigator.isTaskComplete():
+                    if time.monotonic() > deadline:
+                        self._navigator.cancelTask()
+                        break
+                    time.sleep(0.2)
+            finally:
+                self._exploring = False
+            # Don't let the spin count against the completion clock.
+            self._empty_since = None
+            return
+
         grace = float(self.get_parameter("empty_grace_period").value)
         now = time.monotonic()
         if self._empty_since is None:
             self._empty_since = now
             return
-        if now - self._empty_since >= grace:
+        if now - self._empty_since >= grace and not self._done:
             self.get_logger().info(
                 "no reachable frontiers left -- exploration sweep complete"
             )
             self._publish_expression("happy", duration_s=6.0)
-            # Stop re-declaring completion every tick; a manual restart (new
-            # goal, or clearing costmaps after moving furniture) is what
-            # would legitimately reopen the search.
-            self._empty_since = now - grace  # holds at "just declared" state
+            # Marks the sweep finished so this is announced once, not every
+            # tick. Deliberately not a terminal state: _tick keeps running and
+            # clears this the moment a real frontier shows up, so a completion
+            # declared too early (SLAM still warming up, a door opening later,
+            # costmaps clearing) recovers by itself instead of stranding the
+            # robot for the rest of the session.
             self._done = True
 
     def _drive_to(self, frontier: Frontier) -> None:
@@ -268,8 +341,10 @@ def main(args=None):
     period = float(node.get_parameter("planning_period").value)
     try:
         while rclpy.ok():
-            if not node._done:
-                node._tick()
+            # Always ticks, including after a sweep is declared complete:
+            # _done is a "finished for now" announcement latch, not a stop,
+            # and _tick is what notices a frontier reappearing and clears it.
+            node._tick()
             time.sleep(period)
     except KeyboardInterrupt:
         pass

@@ -1,0 +1,222 @@
+<?xml version="1.0" ?>
+<!--
+  Warehouse test environment: a large industrial space with shelving rows,
+  pallets, a cart and a parked Tugbot, for exercising mapping and navigation
+  at a scale test_room.world cannot reach.
+
+  Scene contents (model list and placements) are from OpenRobotics' "Tugbot in
+  Warehouse" world on Gazebo Fuel:
+      https://app.gazebosim.org/OpenRobotics/fuel/worlds/Tugbot%20in%20Warehouse
+  which is licensed CC BY-NC-ND 4.0. The models themselves are fetched from
+  Fuel at run time rather than vendored here, so nothing third-party is
+  redistributed in this repository.
+
+  Rewritten rather than used verbatim, because the published SDF dates from
+  the Ignition era and does not load on Gazebo Harmonic:
+    * its system plugins name ignition::gazebo::systems::* and
+      libignition-gazebo-*-system.so, which no longer exist (gz::sim::systems
+      and gz-sim-*-system now). They are simply omitted here: with no <plugin>
+      tags at all, gz-sim supplies its own defaults, and the robot's URDF
+      already brings the IMU and sensors systems it needs
+      (burgerbot_gazebo.xacro).
+    * its <gui> block uses GzScene3D, removed in favour of MinimalScene.
+      Omitted so Gazebo falls back to its default GUI, matching
+      test_room.world.
+  Model URIs are also updated from fuel.ignitionrobotics.org to
+  fuel.gazebosim.org; all seven were confirmed to resolve before committing.
+
+  Roughly 25m x 40m of floor. The robot spawns at the origin
+  (gazebo.launch.py's default), which sits in the central aisle between the
+  shelf rows at x=-4.4 and x=+5.6, clear of all geometry.
+
+  Note this is a much bigger space than test_room.world: a full frontier
+  sweep takes considerably longer, and the Nav2 costmaps and exploration
+  timeouts are sized accordingly in the burgerbot_navigation and
+  burgerbot_exploration configs.
+-->
+<sdf version="1.7">
+    <world name="tugbot_warehouse">
+        <physics type="ode">
+            <max_step_size>0.01</max_step_size>
+        </physics>
+
+        <light type="directional" name="sun">
+            <cast_shadows>true</cast_shadows>
+            <pose>0 0 10 0 0 0</pose>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+            <attenuation>
+                <range>1000</range>
+                <constant>0.9</constant>
+                <linear>0.01</linear>
+                <quadratic>0.001</quadratic>
+            </attenuation>
+            <direction>-0.5 0.1 -0.9</direction>
+        </light>
+
+        <model name="ground_plane">
+            <static>true</static>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <plane><normal>0 0 1</normal></plane>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <plane><normal>0 0 1</normal><size>100 100</size></plane>
+                    </geometry>
+                    <material>
+                        <ambient>0.8 0.8 0.8 1</ambient>
+                        <diffuse>0.8 0.8 0.8 1</diffuse>
+                        <specular>0.8 0.8 0.8 1</specular>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- The building shell. Sunk 9cm so its floor sits at the ground plane. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Warehouse</uri>
+            <name>warehouse</name>
+            <pose>0 0 -0.09 0 0 0</pose>
+        </include>
+
+        <!-- Shelf rows flanking the central aisle the robot starts in. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf</name>
+            <pose>-4.41528 -0.690987 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_0</name>
+            <pose>-4.41528 2.30697 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_1</name>
+            <pose>-4.41528 5.30708 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_2</name>
+            <pose>-4.41528 8.34352 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_3</name>
+            <pose>5.60144 8.34352 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_4</name>
+            <pose>5.60144 5.30708 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_5</name>
+            <pose>5.60144 -0.690987 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_6</name>
+            <pose>5.60144 2.30697 0 0 0 0</pose>
+        </include>
+
+        <!-- Shelving in the southern bay. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_7</name>
+            <pose>13.3818 -21.2416 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_8</name>
+            <pose>13.3818 -19.0028 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_9</name>
+            <pose>13.3818 -16.4478 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf</uri>
+            <name>shelf_10</name>
+            <pose>13.3818 -14.1028 0 0 0 0</pose>
+        </include>
+
+        <!-- Bulk racking. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf_big</uri>
+            <name>shelf_big_0</name>
+            <pose>-9.34177 -13.5598 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf_big</uri>
+            <name>shelf_big_1</name>
+            <pose>13.9821 15.319 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf_big</uri>
+            <name>shelf_big_2</name>
+            <pose>6.19777 -12.9647 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf_big</uri>
+            <name>shelf_big_3</name>
+            <pose>0.594376 -12.9647 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/shelf_big</uri>
+            <name>shelf_big_4</name>
+            <pose>-5.36284 -12.9647 0 0 0 0</pose>
+        </include>
+
+        <!-- Loose pallets and a cart: low obstacles the lidar sees but that
+             sit below shelf height, so they exercise the costmap differently. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/pallet_box_mobile</uri>
+            <name>pallet_box_mobile</name>
+            <pose>4.4161 14.6952 0.01 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/pallet_box_mobile</uri>
+            <name>pallet_box_mobile_0</name>
+            <pose>4.45415 13.6212 0.01 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/pallet_box_mobile</uri>
+            <name>pallet_box_mobile_1</name>
+            <pose>4.4468 12.229 0.01 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/pallet_box_mobile</uri>
+            <name>pallet_box</name>
+            <pose>-6.11913 13.7079 0.01 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/pallet_box_mobile</uri>
+            <name>pallet_box_0</name>
+            <pose>14.0222 -24.335 0.01 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/cart_model_2</uri>
+            <name>cart1</name>
+            <pose>-5.73 15 0.25 0 0 0</pose>
+        </include>
+
+        <!-- The warehouse's own Tugbot and its dock. Uncontrolled here, so
+             they are simply static obstacles for burgerbot to map around. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/Tugbot-charging-station</uri>
+            <name>charging_station</name>
+            <pose>14.7 -10.6 -0.04 0 0 0</pose>
+        </include>
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/MovAi/models/Tugbot</uri>
+            <name>tugbot</name>
+            <pose>13.9 -10.6 0.1 0 0 0</pose>
+        </include>
+    </world>
+</sdf>

@@ -5,6 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -20,6 +21,7 @@ def generate_launch_description():
     finishes whatever it was already doing.
     """
     use_sim_time = LaunchConfiguration("use_sim_time")
+    goal_timeout = LaunchConfiguration("goal_timeout")
 
     config = os.path.join(
         get_package_share_directory("burgerbot_exploration"),
@@ -30,12 +32,32 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_sim_time", default_value="false"),
+            # Overridable because it scales with the size of the space, not
+            # with the robot. exploration.yaml's default suits a room; a
+            # frontier across a warehouse can be 20m+ away, which is longer
+            # than that default at this robot's speed, so every distant
+            # goal would time out and be blacklisted as unreachable even
+            # though the robot was making fine progress toward it.
+            DeclareLaunchArgument(
+                "goal_timeout",
+                default_value="60.0",
+                description="Seconds to wait for a frontier goal before "
+                "giving up on it and blacklisting it. Raise for large spaces.",
+            ),
             Node(
                 package="burgerbot_exploration",
                 executable="frontier_explorer",
                 name="frontier_explorer",
                 output="screen",
-                parameters=[config, {"use_sim_time": use_sim_time}],
+                # The dict comes after the yaml, so it wins for the keys it
+                # sets and leaves everything else in the file alone.
+                parameters=[
+                    config,
+                    {
+                        "use_sim_time": use_sim_time,
+                        "goal_timeout": ParameterValue(goal_timeout, value_type=float),
+                    },
+                ],
             ),
         ]
     )

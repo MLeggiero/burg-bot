@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!--
+  Official Raspberry Pi 7" Touch Display (800x480), mounted as the robot's face.
+
+  Adds three frames:
+    screen_mount_link  - the physical panel body (visual + collision)
+    screen_link        - centre of the active display area, REP-103 axes:
+                         +X out of the screen (the gaze direction), +Y left, +Z up
+    screen_optical_frame
+                       - same origin, optical axes: +Z out of the screen,
+                         +X right across the panel, +Y down
+
+  burgerbot_face projects world points to screen pixels through
+  screen_optical_frame, so the eyes track a real target in the world. The
+  optical convention matches ROS camera frames, so the usual pinhole maths
+  applies unchanged.
+
+  !! MEASURE YOUR OWN MOUNT !!
+  The offsets below are a plausible front-mount, not your robot. Update
+  screen_mount_* and screen_tilt to match how the panel is actually bolted on,
+  then confirm in RViz that the panel sits where you expect.
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- ==== Mount pose, relative to base_link. Edit these. ==== -->
+  <xacro:property name="screen_mount_x"  value="0.045"/>   <!-- forward   [m] -->
+  <xacro:property name="screen_mount_y"  value="0.0"/>     <!-- left      [m] -->
+  <xacro:property name="screen_mount_z"  value="0.075"/>   <!-- up        [m] -->
+  <!-- Pitch the panel back so the face angles up toward a standing person.
+       Negative pitch = top tilts away from the robot's front. -->
+  <xacro:property name="screen_tilt"     value="-0.262"/>  <!-- -15 deg [rad] -->
+
+  <!-- ==== Panel geometry ==== -->
+  <!-- Outline of the panel + driver PCB sandwich. -->
+  <xacro:property name="screen_body_x"   value="0.020"/>   <!-- thickness -->
+  <xacro:property name="screen_body_y"   value="0.194"/>   <!-- width     -->
+  <xacro:property name="screen_body_z"   value="0.110"/>   <!-- height    -->
+  <!-- Active area: 7" diagonal at the 800x480 (5:3) aspect, square pixels. -->
+  <xacro:property name="screen_active_y" value="0.1525"/>
+  <xacro:property name="screen_active_z" value="0.0915"/>
+  <!-- Panel + bracket + ribbon. Non-trivial next to a ~0.8 kg base: it sits
+       high and forward, so it genuinely moves the CoM. -->
+  <xacro:property name="screen_mass"     value="0.280"/>
+
+  <link name="screen_mount_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${screen_mass}"/>
+      <!-- Solid cuboid: I = m/12 * (a^2 + b^2) -->
+      <inertia
+        ixx="${screen_mass/12.0*(screen_body_y*screen_body_y + screen_body_z*screen_body_z)}"
+        ixy="0.0" ixz="0.0"
+        iyy="${screen_mass/12.0*(screen_body_x*screen_body_x + screen_body_z*screen_body_z)}"
+        iyz="0.0"
+        izz="${screen_mass/12.0*(screen_body_x*screen_body_x + screen_body_y*screen_body_y)}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${screen_body_x} ${screen_body_y} ${screen_body_z}"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${screen_body_x} ${screen_body_y} ${screen_body_z}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="screen_mount_joint" type="fixed">
+    <origin xyz="${screen_mount_x} ${screen_mount_y} ${screen_mount_z}"
+            rpy="0 ${screen_tilt} 0"/>
+    <parent link="base_link"/>
+    <child  link="screen_mount_link"/>
+  </joint>
+
+  <!-- Active display surface: sits on the front face of the panel body. -->
+  <link name="screen_link"/>
+
+  <joint name="screen_joint" type="fixed">
+    <origin xyz="${screen_body_x/2.0} 0 0" rpy="0 0 0"/>
+    <parent link="screen_mount_link"/>
+    <child  link="screen_link"/>
+  </joint>
+
+  <!-- Optical frame: +Z out of the screen, +X right, +Y down.
+       Same rotation ROS uses for camera_optical_frame. -->
+  <link name="screen_optical_frame"/>
+
+  <joint name="screen_optical_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    <parent link="screen_link"/>
+    <child  link="screen_optical_frame"/>
+  </joint>
+
+</robot>

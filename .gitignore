@@ -1,0 +1,42 @@
+# ROS 2 / colcon
+build/
+install/
+log/
+.colcon*
+
+# Third-party Gazebo world assets (see scripts/fetch_sim_assets.sh)
+burgerbot_ws/src/burgerbot_description/models/
+burgerbot_ws/src/burgerbot_description/photos/
+
+# Generated object-detection model (see scripts/export_detection_model.sh)
+burgerbot_ws/src/burgerbot_perception/models/*
+!burgerbot_ws/src/burgerbot_perception/models/.gitkeep
+
+# Demo recordings (see scripts/record_testbed.sh) -- generated artifacts,
+# not source; delivered directly to the user rather than committed.
+recordings/
+
+# Maps captured from real runs are machine-specific; commit deliberately.
+burgerbot_ws/src/burgerbot_mapping/maps/*/
+!burgerbot_ws/src/burgerbot_mapping/maps/small_house/
+!burgerbot_ws/src/burgerbot_mapping/maps/small_warehouse/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+
+# Pico build output
+burgerbot_ws/src/burgerbot_firmware/firmware/**/build/
+*.uf2
+*.elf
+*.bin
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

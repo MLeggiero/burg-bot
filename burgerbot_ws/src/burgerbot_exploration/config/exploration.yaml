@@ -1,0 +1,45 @@
+frontier_explorer:
+  ros__parameters:
+    map_frame: "map"
+    robot_frame: "base_footprint"
+
+    # How often to re-evaluate frontiers while idle (no goal in flight).
+    planning_period: 3.0
+
+    # Occupancy grid cell above this is a wall. slam_toolbox's raw output is
+    # fairly binary already (0/-1/100), so this rarely needs tuning.
+    occupied_threshold: 65
+
+    # Frontier cells closer together than this (in grid cells) are grouped
+    # into one candidate. Filters single-cell noise along already-explored
+    # walls -- without it the explorer spends most of its time twitching at
+    # wall texture instead of covering new area.
+    min_cluster_size: 6
+    # Belt-and-suspenders re-filter by cell count after clustering.
+    min_frontier_size: 6
+
+    # Scoring: score = size_weight*cell_count - distance_weight*distance.
+    # Raise distance_weight if the robot is wastefully crossing the whole
+    # map for a marginally bigger frontier; raise size_weight if it's
+    # nibbling at small nearby openings instead of covering ground.
+    size_weight: 1.0
+    distance_weight: 1.5
+
+    # A goal within this radius (metres) of a blacklisted point is treated
+    # as blacklisted too -- the "same" frontier's centroid shifts by a cell
+    # or two between scans as the map fills in, so an exact-point match
+    # would let the explorer retry a goal Nav2 just failed at, forever.
+    blacklist_radius: 0.6
+
+    # Give up on a goal Nav2 hasn't reached within this long and blacklist it.
+    goal_timeout: 60.0
+
+    # How long to see zero frontiers before declaring the sweep complete,
+    # rather than on the very first empty result -- guards against a
+    # transient gap right after SLAM starts, before the first map arrives.
+    empty_grace_period: 10.0
+
+    # Publish ExpressionCommand (curious while exploring, happy when done) if
+    # burgerbot_expressions is running. Purely cosmetic; safe to leave on
+    # even with no face node anywhere -- the messages just have no subscriber.
+    publish_expressions: true

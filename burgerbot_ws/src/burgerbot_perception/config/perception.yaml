@@ -1,0 +1,76 @@
+object_detector:
+  ros__parameters:
+    # Left empty deliberately -- perception.launch.py computes the real
+    # installed path via get_package_share_directory() and overrides these.
+    # A relative or hand-guessed path here would depend on whatever the
+    # node's current working directory happens to be at launch, which is not
+    # something to rely on (the same class of bug fixed in
+    # burgerbot_navigation/config/bt_navigator.yaml -- see its comment).
+    # object_detector raises a clear error at startup if this is still empty
+    # rather than failing confusingly later.
+    model_path: ""
+    labels_path: ""
+    input_topic: "/camera/camera/color/image_raw"
+
+    # Objects worth labelling on a map are not, generally, moving fast
+    # enough to need real-time video. The Pi 4 has no GPU/NPU; this is the
+    # one number that actually controls how much CPU the pipeline costs.
+    inference_rate_hz: 1.5
+
+    score_threshold: 0.45
+    iou_threshold: 0.45
+    # 3 rather than 4 (all cores): leaves one core's worth of headroom for
+    # Nav2 + SLAM + the face renderer, all of which are also running.
+    num_threads: 3
+
+object_projector:
+  ros__parameters:
+    map_frame: "map"
+    detections_topic: "/perception/detections2d"
+    depth_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
+
+    # Half-width (pixels) of the patch sampled around a bbox centre for
+    # depth. A single pixel is too easily a sensor dropout; too wide starts
+    # averaging in whatever is behind the object's edges.
+    depth_sample_radius: 3
+    min_depth_m: 0.2
+    max_depth_m: 8.0
+    # Max allowed time gap (seconds) between a detection and the depth frame
+    # it's paired with -- the robot moves, so a stale pairing silently
+    # produces a wrong 3D position with no error to show for it.
+    sync_slop: 0.15
+
+    # Messages held per topic while looking for a timestamp match. Effectively
+    # a duration: depth arrives at the camera's full rate, so this has to
+    # cover however long inference takes, or the depth frame a detection needs
+    # is already evicted by the time that detection is published. See
+    # object_projector.py for the full explanation.
+    sync_queue_size: 60
+
+semantic_map:
+  ros__parameters:
+    map_frame: "map"
+
+    # Detections of the same label within this radius (metres) are the same
+    # physical object, not a new one. Too small and one real object splits
+    # into several IDs as detections jitter; too large and two distinct
+    # nearby objects of the same class merge into one.
+    match_radius: 0.5
+    min_confidence: 0.4
+
+    # A single glimpse can be a false positive; require at least this many
+    # observations before an object shows up in RViz or gets saved.
+    min_observations_for_display: 2
+
+    publish_rate: 2.0
+
+    # Where saved objects.yaml lands, alongside the SLAM map of the same
+    # name -- see burgerbot_mapping/maps/.
+    map_name: "small_house"
+
+    # 0 disables pruning. Set to something like 300 if the robot revisits
+    # the same space repeatedly and old, no-longer-true detections
+    # (furniture that moved) should eventually drop off rather than persist
+    # forever.
+    prune_max_age: 0.0

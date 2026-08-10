@@ -1,0 +1,163 @@
+<?xml version="1.0" ?>
+<!--
+  Minimal testbed for autonomous mapping: an enclosed room with one
+  off-center obstacle. Almost entirely self-contained SDF primitives, unlike
+  small_house.world / small_warehouse.world, which need the ~117MB AWS
+  RoboMaker fetch (see scripts/fetch_sim_assets.sh); the one exception is
+  a single small (~350KB) Fuel-hosted chair model, included below, so
+  burgerbot_perception has one real COCO-class object to find.
+
+  Deliberately fully enclosed. Frontier exploration (burgerbot_exploration)
+  needs a bounded space to converge in; an open world leaks into
+  unexplored space forever and the sweep never finishes.
+
+  Interior is roughly 4m x 4m, walls centered on the origin, robot spawns at
+  the origin (gazebo.launch.py's default spawn pose).
+-->
+<sdf version="1.7">
+    <world name="test_room">
+        <physics type="ode">
+            <max_step_size>0.01</max_step_size>
+        </physics>
+
+        <light type="directional" name="sun">
+            <cast_shadows>true</cast_shadows>
+            <pose>0 0 10 0 0 0</pose>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+            <attenuation>
+                <range>1000</range>
+                <constant>0.9</constant>
+                <linear>0.01</linear>
+                <quadratic>0.001</quadratic>
+            </attenuation>
+            <direction>-0.5 0.1 -0.9</direction>
+        </light>
+
+        <model name="ground_plane">
+            <static>true</static>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                        </plane>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>100 100</size>
+                        </plane>
+                    </geometry>
+                    <material>
+                        <ambient>0.8 0.8 0.8 1</ambient>
+                        <diffuse>0.8 0.8 0.8 1</diffuse>
+                        <specular>0.8 0.8 0.8 1</specular>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Four walls, ~4m x 4m interior, 0.1m thick, 1.5m tall. -->
+        <model name="wall_north">
+            <static>true</static>
+            <pose>0 2.05 0.75 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>4.2 0.1 1.5</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>4.2 0.1 1.5</size></box></geometry>
+                    <material>
+                        <ambient>0.7 0.7 0.72 1</ambient>
+                        <diffuse>0.7 0.7 0.72 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="wall_south">
+            <static>true</static>
+            <pose>0 -2.05 0.75 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>4.2 0.1 1.5</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>4.2 0.1 1.5</size></box></geometry>
+                    <material>
+                        <ambient>0.7 0.7 0.72 1</ambient>
+                        <diffuse>0.7 0.7 0.72 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="wall_east">
+            <static>true</static>
+            <pose>2.05 0 0.75 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>0.1 4.2 1.5</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>0.1 4.2 1.5</size></box></geometry>
+                    <material>
+                        <ambient>0.7 0.7 0.72 1</ambient>
+                        <diffuse>0.7 0.7 0.72 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="wall_west">
+            <static>true</static>
+            <pose>-2.05 0 0.75 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>0.1 4.2 1.5</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>0.1 4.2 1.5</size></box></geometry>
+                    <material>
+                        <ambient>0.7 0.7 0.72 1</ambient>
+                        <diffuse>0.7 0.7 0.72 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- The one obstacle. Off-center on purpose, so the explorer has to
+             route around something rather than sweep an empty box. -->
+        <model name="obstacle">
+            <static>true</static>
+            <pose>1.0 0.6 0.5 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><cylinder><radius>0.3</radius><length>1.0</length></cylinder></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><cylinder><radius>0.3</radius><length>1.0</length></cylinder></geometry>
+                    <material>
+                        <ambient>0.85 0.35 0.15 1</ambient>
+                        <diffuse>0.85 0.35 0.15 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+        <!-- A real, COCO-recognizable object for burgerbot_perception to
+             find: the walls and cylinder above are geometry the object
+             detector was never trained to name. Placed in the corner
+             opposite the cylinder obstacle, clear of the robot's spawn
+             point and the exploration path. Pulled from Fuel like the
+             Tugbot warehouse world's own props, not vendored; gz sim
+             downloads and caches it on first launch. -->
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/WoodenChair</uri>
+            <name>chair</name>
+            <pose>-1.2 -1.2 0 0 0 0</pose>
+        </include>
+    </world>
+</sdf>

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>burgerbot_face</name>
+  <version>0.0.0</version>
+  <description>
+    Procedural animated face for the burgerbot, rendered to the 7" DSI panel.
+    Two light-blue eyes on black, composited from expression keyframes plus
+    blink, idle, gaze, inertia and reaction layers. Pure renderer -- the mood
+    decisions live in burgerbot_expressions.
+  </description>
+  <maintainer email="mark.leggiero1@gmail.com">Mark Leggiero</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>burgerbot_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <!-- SDL2 via the distro package; pip has no wheel for the Pi's Python. -->
+  <exec_depend>python3-pygame</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

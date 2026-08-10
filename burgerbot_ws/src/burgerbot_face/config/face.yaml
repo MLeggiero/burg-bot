@@ -1,0 +1,40 @@
+face_node:
+  ros__parameters:
+    # 0 = adopt the panel's native mode. Leave it at 0 so swapping or rotating
+    # the display does not need a code change.
+    width: 0
+    height: 0
+    fullscreen: true
+
+    # Empty = let SDL choose. On the Pi running Ubuntu Server with no desktop,
+    # set this to "kmsdrm" so SDL renders straight to the DSI panel through
+    # KMS/DRM. On a dev machine leave it empty and pass fullscreen:=false.
+    video_driver: ""
+
+    # The Pi 4 is also running Nav2, SLAM and the control loop. 45 fps looks
+    # smooth and leaves headroom; measure before raising it.
+    fps: 45
+
+    # 2x supersampling, downscaled for antialiasing -- pygame has no AA fills
+    # and hard eye edges are very visible at arm's length on a 7" panel. Drop
+    # to 1 if the Pi cannot hold frame rate.
+    supersample: 2
+
+    background: [0.0, 0.0, 0.0]
+
+    cmd_vel_topic: "/burgerbot_controller/cmd_vel"
+    plan_topic: "/plan"
+
+    # Introspection only; the renderer does not consume it.
+    state_publish_rate: 10.0
+
+    screen_frame: "screen_optical_frame"
+    robot_frame: "base_footprint"
+
+    # A gaze target this far off the screen normal deflects the eyes fully.
+    gaze_max_angle_deg: 60.0
+
+    # Distance along the plan used for the anticipation lookahead.
+    path_lookahead: 0.6
+
+    enable_touch: true

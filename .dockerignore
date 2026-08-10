@@ -1,0 +1,12 @@
+# Keep the build context small -- the Dockerfile only needs burgerbot_ws/src
+# for its rosdep layer; everything else is bind-mounted at runtime, not
+# baked into the image.
+.git/
+burgerbot_ws/build/
+burgerbot_ws/install/
+burgerbot_ws/log/
+burgerbot_ws/src/burgerbot_description/models/
+burgerbot_ws/src/burgerbot_description/photos/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/

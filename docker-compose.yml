@@ -1,0 +1,81 @@
+# ROS 2 Jazzy dev/sim container. See docker/Dockerfile and README.md.
+#
+# Usage:
+#   docker compose run --rm dev bash      # interactive shell
+#   ./scripts/dev_container.sh            # same thing, with a couple of checks first
+#
+# GUI passthrough (Gazebo, RViz, the windowed face demo) works through WSLg:
+# /mnt/wslg is bind-mounted at the identical path and WAYLAND_DISPLAY/
+# XDG_RUNTIME_DIR point into it, /usr/lib/wsl supplies the D3D12/dxcore GL
+# driver, and /dev/dxg is WSLg's virtual GPU device (there is no /dev/dri
+# under WSLg -- this is not a mistake). X11 additionally needs its socket
+# re-mounted at the conventional /tmp/.X11-unix path -- see the volumes list.
+# All of this was checked against this machine's actual WSLg layout and a
+# running container, not just assumed to work.
+#
+# network_mode: host is deliberate, not a default left in place -- ROS 2's
+# DDS discovery is multicast-based, and under Docker's default bridge network
+# each `docker compose run` gets its own network namespace and cannot see the
+# others' participants. Host networking gives every container invocation
+# (Gazebo in one terminal, Nav2 in another, the face demo in a third) the
+# same ROS graph, which is the whole point of running them in the same
+# container image in the first place.
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        USER_UID: "1000"
+        USER_GID: "1000"
+    image: burgerbot-dev:jazzy
+    network_mode: host
+    ipc: host
+    stdin_open: true
+    tty: true
+    volumes:
+      - .:/workspace
+      # Gazebo Fuel model cache (worlds pulled from fuel.gazebosim.org, e.g.
+      # test_room.world's chair prop and the Tugbot warehouse world). A named
+      # volume, not the bind-mounted repo, so it survives `--rm` throwing
+      # away the container -- without this every single `docker compose run`
+      # re-downloads every referenced model from scratch, which is slow and,
+      # worse, adds enough startup load/latency to occasionally blow past
+      # slam_toolbox's lifecycle bond timeout (seen in testing: the download
+      # racing SLAM startup made bringup fail intermittently).
+      - gz-fuel-cache:/home/dev/.gz
+      - /mnt/wslg:/mnt/wslg
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+      # X11 clients hardcode /tmp/.X11-unix regardless of DISPLAY's value --
+      # DISPLAY=:0 always means socket /tmp/.X11-unix/X0, there is no DISPLAY
+      # syntax that points it at an arbitrary path. WSLg's actual socket lives
+      # under /mnt/wslg/.X11-unix, so it has to be bind-mounted a second time
+      # at the conventional location or every X11 client fails with "unable
+      # to open display" despite /mnt/wslg being right there.
+      - /mnt/wslg/.X11-unix:/tmp/.X11-unix
+      # Uncomment to flash or talk to a Pico plugged into the Windows host
+      # (via usbipd-win passthrough) rather than one on the robot's Pi:
+      # - /dev/ttyACM0:/dev/ttyACM0
+    devices:
+      - /dev/dxg
+    environment:
+      DISPLAY: ":0"
+      WAYLAND_DISPLAY: "wayland-0"
+      XDG_RUNTIME_DIR: "/mnt/wslg/runtime-dir"
+      PULSE_SERVER: "/mnt/wslg/PulseServer"
+      LD_LIBRARY_PATH: "/usr/lib/wsl/lib"
+      # WSLg exposes the GPU only as /dev/dxg, not a standard DRI render node
+      # (/dev/dri doesn't exist under WSLg at all). Mesa's automatic driver
+      # selection enumerates /dev/dri to pick a backend and finds nothing
+      # there, so it silently falls back to llvmpipe (software rendering) --
+      # confirmed on this machine: plain glxinfo reports "llvmpipe", the
+      # exact same call with these two variables set reports an accelerated
+      # "D3D12 (<actual GPU model>)". Without this, Gazebo and RViz still
+      # run, just at software-rendering framerates.
+      MESA_LOADER_DRIVER_OVERRIDE: "d3d12"
+      GALLIUM_DRIVER: "d3d12"
+      ROS_DOMAIN_ID: "0"
+
+volumes:
+  gz-fuel-cache:

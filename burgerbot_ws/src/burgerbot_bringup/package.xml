@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>burgerbot_bringup</name>
+  <version>0.0.0</version>
+  <description>Burgerbot Bringup package</description>
+  <maintainer email="mark.leggiero1@gmail.com">Mark Leggiero</maintainer>
+  <author email="antonio.brandi@outlook.it">Antonio Brandi</author>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>rplidar_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>burgerbot_firmware</exec_depend>
+  <exec_depend>burgerbot_controller</exec_depend>
+  <exec_depend>burgerbot_description</exec_depend>
+  <exec_depend>burgerbot_localization</exec_depend>
+  <exec_depend>burgerbot_mapping</exec_depend>
+  <exec_depend>burgerbot_navigation</exec_depend>
+  <exec_depend>burgerbot_utils</exec_depend>
+  <exec_depend>burgerbot_face</exec_depend>
+  <exec_depend>burgerbot_expressions</exec_depend>
+  <exec_depend>burgerbot_exploration</exec_depend>
+  <exec_depend>burgerbot_perception</exec_depend>
+  <!-- Only for its stock nav2_default_view.rviz (Map + RobotModel +
+       LaserScan together, which none of this repo's own .rviz configs
+       have); nothing else from nav2_bringup is used. Never actually
+       declared before now, so nothing installed it; simulated_robot.launch.py
+       has referenced it since it was ported and would have hit the same
+       PackageNotFoundError the first time anyone actually ran it. -->
+  <exec_depend>nav2_bringup</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

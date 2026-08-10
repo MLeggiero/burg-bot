@@ -1,0 +1,10 @@
+<library path="burgerbot_firmware">
+    <class name="burgerbot_firmware/BurgerbotInterface"
+      type="burgerbot_firmware::BurgerbotInterface"
+      base_class_type="hardware_interface::SystemInterface"
+    >
+      <description>
+        Burgerbot Hardware Interface
+      </description>
+    </class>
+  </library>

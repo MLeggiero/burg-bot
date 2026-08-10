@@ -1,0 +1,28 @@
+twist_mux:
+  ros__parameters:
+    use_stamped: false
+    topics:
+      joystick:
+        topic   : joy_vel
+        timeout : 0.5
+        priority: 99
+      keyboard: 
+        topic   : key_vel
+        timeout : 0.5
+        priority: 90
+      navigation:
+        topic   : cmd_vel
+        timeout : 0.5
+        priority: 80
+      # Expressive body gestures from burgerbot_expressions.
+      #
+      # Lowest priority on purpose. Gestures are authored as pure character
+      # motion with no regard for the surroundings; putting them beneath
+      # navigation and the operator means intent can be written freely
+      # upstream while the mux guarantees a nod can never override someone
+      # steering the robot or Nav2 avoiding an obstacle. The safety_stop lock
+      # in twist_mux_locks.yaml outranks all of these regardless.
+      gesture:
+        topic   : gesture_vel
+        timeout : 0.5
+        priority: 10

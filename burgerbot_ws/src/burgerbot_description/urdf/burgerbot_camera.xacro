@@ -1,0 +1,147 @@
+<?xml version="1.0"?>
+<!--
+  Intel RealSense D435, mounted forward-facing for the object-detection /
+  semantic-mapping pipeline (burgerbot_perception).
+
+  Uses the official realsense2_description sensor_d435 macro rather than a
+  hand-rolled camera_link, because the D435's color and depth sensors are
+  physically offset from each other (~15mm baseline) and from the mounting
+  screw; getting that wrong quietly misaligns every 3D point the detection
+  pipeline projects. The macro produces, among others:
+
+      camera_link
+      camera_color_optical_frame   <- what burgerbot_perception projects into
+      camera_depth_optical_frame
+
+  use_nominal_extrinsics is left at its default (false): the real
+  realsense2_camera driver node publishes each physical unit's actual
+  factory-calibrated extrinsics at runtime, which supersede the macro's
+  rough estimates. Setting it true would bake in the wrong numbers for
+  *your* specific camera.
+
+  !! MEASURE YOUR OWN MOUNT !!
+  Forward-facing, above the display, is a starting guess, not your robot.
+  Update camera_mount_* below to match, then confirm in RViz that the camera
+  frustum points where you expect.
+
+  Mounted above the screen, not merely "roughly at the display's height" as
+  an earlier version of this comment said: burgerbot_screen.xacro's panel
+  occupies x roughly [0.035, 0.055] (screen_mount_x=0.045, thickness 0.020)
+  and z roughly [0.02, 0.13] (screen_mount_z=0.075, height 0.110). The
+  original camera_mount_x=0.06, z=0.10 put the lens 5mm in front of the
+  screen's own front face and squarely inside its height range; confirmed
+  by capturing an actual simulated frame and finding it filled almost
+  entirely by the screen panel's own dark_grey material, not the room.
+  Clearing the screen's top edge (z=0.13) with real margin, like a laptop's
+  webcam sitting above its display, avoids this without needing exact
+  hardware measurements this session doesn't have. -->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435.urdf.xacro" />
+
+  <!-- ==== Mount pose, relative to base_link. Edit these. ==== -->
+  <xacro:property name="camera_mount_x" value="0.05"/>   <!-- forward [m] -->
+  <xacro:property name="camera_mount_y" value="0.0"/>    <!-- left    [m] -->
+  <xacro:property name="camera_mount_z" value="0.17"/>   <!-- up      [m], clears the screen's top edge (0.13) -->
+  <xacro:property name="camera_mount_pitch" value="0.0"/> <!-- level; negative tilts down -->
+
+  <xacro:sensor_d435
+      parent="base_link"
+      name="camera"
+      use_nominal_extrinsics="false"
+      use_mesh="true">
+    <origin xyz="${camera_mount_x} ${camera_mount_y} ${camera_mount_z}"
+            rpy="0 ${camera_mount_pitch} 0"/>
+  </xacro:sensor_d435>
+
+  <!-- Simulation-only optical frame. camera_color_optical_frame (what the
+       macro's docstring above and burgerbot_perception both normally mean
+       by "the camera frame") only actually exists in the URDF when
+       use_nominal_extrinsics="true"; with it false (correct, see above:
+       the real driver publishes the real one dynamically), the macro emits
+       no color/depth frame links at all, only camera_link. Confirmed by
+       inspecting the expanded URDF: no camera_color_optical_frame link,
+       joint, or reference anywhere in it, and Gazebo silently drops a
+       <gazebo reference="..."> block whose target doesn't exist: no
+       error, the sensor just never gets created.
+
+       A same-named link would collide with the real driver's own
+       camera_color_optical_frame TF publish (publish_tf: true in
+       camera.launch.py) once both this robot_state_publisher's static
+       joint AND the live driver claim the same frame; the exact
+       dual-publisher conflict use_nominal_extrinsics=false exists to avoid
+       in the first place. Uniquely named instead, so it can never collide,
+       whether or not the real driver ever runs on this same URDF (has_camera
+       gates the whole file, not this choice specifically).
+
+       Co-located with camera_link rather than offset by the D435's actual
+       ~15mm color-sensor baseline; close enough for a simulated object
+       detector, the exact offset only matters for hardware-accurate
+       projection, and this frame never exists on the real robot to need it. -->
+  <joint name="camera_sim_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_sim_optical_frame"/>
+    <!-- Standard ROS optical-frame rotation: rolls REP-103's forward-X,
+         up-Z into the camera convention's forward-Z, down-Y. -->
+    <origin xyz="0 0 0" rpy="-1.5707963267948966 0 -1.5707963267948966"/>
+  </joint>
+  <link name="camera_sim_optical_frame"/>
+
+  <!-- Simulated RGBD sensor for Gazebo. The real robot never uses this:
+       on real hardware burgerbot_perception/launch/camera.launch.py talks
+       to the physical D435 driver instead, which is where actual color/
+       depth/camera_info come from. This is what stands in for it in
+       testbed.launch.py, bridged to the same topic shape by
+       camera_sim.launch.py.
+
+       A single rgbd_camera sensor, not separate camera + depth_camera
+       sensors: on real hardware color and depth are physically offset and
+       need align_depth to register onto the same pixel grid (see
+       camera.launch.py); a simulated RGBD sensor renders both from the
+       identical viewpoint, so the depth image comes out pre-aligned to
+       color for free, so there's no separate "aligned_depth" step to model
+       in sim. -->
+  <!-- Attached to camera_link, NOT camera_sim_optical_frame, and this is the
+       whole subtlety: a gz-sim camera sensor aims along its attach frame's
+       +X with +Z up (the body/REP-103 convention), it does not use the ROS
+       optical convention. camera_sim_optical_frame's +X points to the
+       robot's right (the optical rotation maps optical-X onto body -Y), so
+       attaching the sensor there aimed the camera sideways. camera_link is
+       already body-convention (+X forward), so the sensor points where the
+       robot is actually facing with no corrective pose at all.
+
+       gz_frame_id below still tags the published Image/CameraInfo with the
+       optical frame, because object_projector back-projects through
+       image_geometry.PinholeCameraModel, which assumes optical axes
+       (+Z forward, +X right, +Y down). Sensor mounted body-convention,
+       data published optical-convention: both halves get the frame they
+       actually expect. -->
+  <gazebo reference="camera_link">
+    <sensor name="camera" type="rgbd_camera">
+      <always_on>true</always_on>
+      <!-- Matches camera.launch.py's real rgb_camera.color_profile fps. -->
+      <update_rate>15</update_rate>
+      <visualize>false</visualize>
+      <topic>camera</topic>
+      <!-- Published Image/CameraInfo header.frame_id: must be a frame
+           that's actually in TF (camera_sim_optical_frame, via the fixed
+           joint above), not the nonexistent camera_color_optical_frame,
+           or object_projector's TF lookup from it would never resolve. -->
+      <gz_frame_id>camera_sim_optical_frame</gz_frame_id>
+      <camera>
+        <!-- D435 color sensor's published horizontal FOV, ~69.4 deg. -->
+        <horizontal_fov>1.2112585</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>10.0</far>
+        </clip>
+      </camera>
+    </sensor>
+  </gazebo>
+
+</robot>

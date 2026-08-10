@@ -1,0 +1,62 @@
+mood_arbiter:
+  ros__parameters:
+    update_rate: 10.0
+
+    # Minimum time a winning expression keeps the face. Stops two equal-priority
+    # sources swapping every tick; a higher priority still preempts instantly.
+    min_hold: 0.6
+
+    # Republish the current winner this often even when unchanged, so a face
+    # node that restarts picks the mood back up instead of sitting on neutral.
+    refresh_period: 2.0
+
+    # Anything closer than this triggers a startle. Should sit just outside the
+    # robot's own footprint radius (0.13) plus a little, or the robot startles
+    # at its own bumper.
+    danger_distance: 0.22
+
+    # While mapping_mode is on: closer than this (but outside danger_distance)
+    # reads as nervous instead of the resting neutral/curious state. Wide
+    # enough to react before the robot is nearly touching something, narrow
+    # enough that normal corridor and doorway clearance doesn't trigger it.
+    caution_distance: 0.5
+
+    # The eyes track the nearest obstacle inside this range and drift idly
+    # beyond it.
+    gaze_attention_distance: 1.2
+    gaze_height: 0.15
+    enable_gaze: true
+
+    battery_low_fraction: 0.20
+    battery_critical_fraction: 0.07
+
+    # Trace of the AMCL x/y/yaw pose covariance above which the robot starts
+    # looking unsure. Very map and robot specific -- watch
+    #   ros2 topic echo /amcl_pose --field pose.covariance
+    # while driving around, note the value when it is genuinely well localized,
+    # and set this comfortably above it.
+    pose_covariance_threshold: 0.35
+
+    # Set true when running SLAM, so the resting face is curious rather than
+    # neutral while exploring.
+    mapping_mode: false
+
+gesture_server:
+  ros__parameters:
+    publish_rate: 20.0
+
+    # Clearance needed in the direction of travel before a translating gesture
+    # (nod, anticipate, recoil) will run.
+    translate_clearance: 0.35
+
+    # Clearance needed all round before turning on the spot.
+    rotate_clearance: 0.22
+
+    # Half-width of the sector checked ahead of or behind the robot.
+    sector_half_width_deg: 50.0
+
+    robot_frame: "base_footprint"
+
+    # How long a gesture with abort_if_blocked:=false waits for the way to
+    # clear before giving up.
+    max_gate_wait: 3.0

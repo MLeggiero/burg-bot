@@ -1,0 +1,42 @@
+# Play a scripted body gesture on the drive base.
+#
+# Gestures are authored purely as expressive motion, with no regard for safety
+# or the surroundings. The gesture server publishes them to a low-priority
+# twist_mux input and gates them behind the safety-stop node and a costmap
+# clearance check, so navigation and the operator always outrank a gesture and
+# one can never drive the robot into anything.
+#
+# This split is deliberate: intent is authored freely upstream, physical
+# constraints are enforced downstream, and neither has to reason about the
+# other.
+
+string NOD_YES=nod_yes            # short forward/back rocks
+string SHAKE_NO=shake_no          # small alternating yaw
+string WIGGLE=wiggle              # excited yaw oscillation
+string CURIOUS_TILT=curious_tilt  # slow yaw scan, as if looking around
+string CELEBRATE=celebrate        # full spin
+string ANTICIPATE=anticipate      # tiny reverse before departing
+string RECOIL=recoil              # sharp back-off after a surprise
+
+# ---- Goal ----
+string gesture
+
+# Amplitude scale, 0..1. Lets one gesture read as a polite nod or an
+# enthusiastic one without authoring both.
+float32 scale 1.0
+
+# Times to repeat the gesture's base cycle.
+uint8 repeat 1
+
+# If true, abort the moment the feasibility gate objects. If false, the gesture
+# pauses and resumes when the way is clear again (up to its own timeout).
+bool abort_if_blocked true
+---
+# ---- Result ----
+bool completed
+# Set when the gate cut the gesture short, naming what objected.
+string message
+---
+# ---- Feedback ----
+float32 progress
+bool gated

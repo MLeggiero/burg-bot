@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>burgerbot_exploration</name>
+  <version>0.0.0</version>
+  <description>
+    Autonomous frontier exploration: drives the robot to the boundary of
+    mapped and unmapped space, repeatedly, until nothing unexplored remains
+    in reach. Uses only the live SLAM occupancy grid, TF, and Nav2 -- no
+    camera required. Frontier detection and scoring (frontier.py) are pure
+    grid math with no ROS dependency and are unit tested on synthetic grids.
+  </description>
+  <maintainer email="mark.leggiero1@gmail.com">Mark Leggiero</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>burgerbot_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_simple_commander</depend>
+  <depend>tf2_ros</depend>
+  <depend>python3-numpy</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

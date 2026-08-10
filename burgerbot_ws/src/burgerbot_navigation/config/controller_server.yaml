@@ -62,8 +62,8 @@ local_costmap:
       robot_base_frame: base_link
       use_sim_time: true
       rolling_window: true
-      width: 3
-      height: 3
+      width: 10
+      height: 10
       resolution: 0.05
 # Circumscribed radius, and it must cover the 7" face panel, not just the
       # chassis. With the default mount in burgerbot_screen.xacro the panel's
@@ -87,8 +87,8 @@ local_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 11.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 10.0
           obstacle_min_range: 0.0
       always_send_full_costmap: True

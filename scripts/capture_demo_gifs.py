@@ -55,7 +55,7 @@ PATH_RGB = (255, 150, 60)
 
 
 class DemoCapture(Node):
-    def __init__(self, scale: int, fps: float):
+    def __init__(self, scale: int, fps: float, map_topic: str = "/map"):
         super().__init__("demo_capture")
         self._bridge = CvBridge()
         self._scale = scale
@@ -71,7 +71,7 @@ class DemoCapture(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        self.create_subscription(OccupancyGrid, "/map", self._on_map, MAP_QOS)
+        self.create_subscription(OccupancyGrid, map_topic, self._on_map, MAP_QOS)
         self.create_subscription(Path, "/plan", self._on_path, 10)
         self.create_subscription(
             Image, "/camera/camera/color/image_raw", self._on_image, 1
@@ -177,6 +177,11 @@ def main():
     p.add_argument("--playback-fps", type=float, default=12.0, help="GIF playback rate")
     p.add_argument("--scale", type=int, default=4, help="map pixel magnification")
     p.add_argument("--out", default="docs/media", help="output directory")
+    p.add_argument(
+        "--map-topic", default="/map",
+        help="Occupancy grid to record. Use /global_costmap/costmap when "
+             "exploring from the costmap rather than slam_toolbox's map.",
+    )
     args = p.parse_args()
 
     import os
@@ -184,7 +189,7 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     rclpy.init()
-    node = DemoCapture(args.scale, args.fps)
+    node = DemoCapture(args.scale, args.fps, args.map_topic)
     print(f"recording {args.duration:.0f}s ...")
 
     import time

@@ -27,6 +27,8 @@ def generate_launch_description():
     use_perception = LaunchConfiguration("use_perception")
     world_name = LaunchConfiguration("world_name")
     goal_timeout = LaunchConfiguration("goal_timeout")
+    spawn_z = LaunchConfiguration("spawn_z")
+    map_topic = LaunchConfiguration("map_topic")
 
     world_name_arg = DeclareLaunchArgument(
         "world_name",
@@ -44,6 +46,22 @@ def generate_launch_description():
         default_value="60.0",
         description="Exploration goal timeout in seconds. Raise it for "
         "large worlds; 240 is a reasonable starting point for the warehouse.",
+    )
+
+    spawn_z_arg = DeclareLaunchArgument(
+        "spawn_z",
+        default_value="0.0",
+        description="Height (m) to spawn the robot at. Set to e.g. 0.15 to "
+        "watch it drop and settle, which distinguishes a robot stuck in "
+        "geometry from one that is simply idle.",
+    )
+
+    map_topic_arg = DeclareLaunchArgument(
+        "map_topic",
+        default_value="/map",
+        description="Occupancy grid the frontier explorer reads. Set to "
+        "/global_costmap/costmap to explore from Nav2's live scan-fused "
+        "costmap when slam_toolbox's own map is not growing.",
     )
 
     use_face_arg = DeclareLaunchArgument(
@@ -72,7 +90,7 @@ def generate_launch_description():
             "launch",
             "gazebo.launch.py",
         ),
-        launch_arguments={"world_name": world_name}.items(),
+        launch_arguments={"world_name": world_name, "spawn_z": spawn_z}.items(),
     )
 
     controller = IncludeLaunchDescription(
@@ -134,6 +152,7 @@ def generate_launch_description():
         launch_arguments={
             "use_sim_time": "true",
             "goal_timeout": goal_timeout,
+            "map_topic": map_topic,
         }.items(),
     )
 
@@ -191,6 +210,8 @@ def generate_launch_description():
         [
             world_name_arg,
             goal_timeout_arg,
+            spawn_z_arg,
+            map_topic_arg,
             use_face_arg,
             use_expressions_arg,
             use_perception_arg,

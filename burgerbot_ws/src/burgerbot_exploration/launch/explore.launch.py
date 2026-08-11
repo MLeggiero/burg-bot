@@ -22,6 +22,7 @@ def generate_launch_description():
     """
     use_sim_time = LaunchConfiguration("use_sim_time")
     goal_timeout = LaunchConfiguration("goal_timeout")
+    map_topic = LaunchConfiguration("map_topic")
 
     config = os.path.join(
         get_package_share_directory("burgerbot_exploration"),
@@ -44,6 +45,13 @@ def generate_launch_description():
                 description="Seconds to wait for a frontier goal before "
                 "giving up on it and blacklisting it. Raise for large spaces.",
             ),
+            DeclareLaunchArgument(
+                "map_topic",
+                default_value="/map",
+                description="Occupancy grid to find frontiers in. Use "
+                "/global_costmap/costmap to explore from Nav2's live "
+                "scan-fused costmap instead of slam_toolbox's map.",
+            ),
             Node(
                 package="burgerbot_exploration",
                 executable="frontier_explorer",
@@ -56,6 +64,7 @@ def generate_launch_description():
                     {
                         "use_sim_time": use_sim_time,
                         "goal_timeout": ParameterValue(goal_timeout, value_type=float),
+                        "map_topic": map_topic,
                     },
                 ],
             ),

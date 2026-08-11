@@ -62,6 +62,20 @@ class FrontierExplorer(Node):
 
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("robot_frame", "base_footprint")
+        # Which occupancy grid to hunt frontiers in. /map (slam_toolbox) is
+        # the right answer normally: it is globally consistent and loop-closed.
+        #
+        # /global_costmap/costmap is the alternative, and it is a genuinely
+        # different picture of the world rather than a copy -- Nav2 builds it
+        # by fusing the SLAM map with obstacles raytraced live from /scan, in
+        # the same map frame and the same -1/0-100 encoding. That makes it a
+        # usable fallback when SLAM's own grid is not growing but the laser is
+        # plainly fine, which is the state tugbot_warehouse is in.
+        #
+        # The trade is real: the costmap is a rolling, forgetful, robot-centric
+        # view with no loop closure, so frontiers found in it are only as good
+        # as recent odometry. Diagnostic and demo use, not a SLAM replacement.
+        self.declare_parameter("map_topic", "/map")
         self.declare_parameter("planning_period", 3.0)
         self.declare_parameter("occupied_threshold", 65)
         self.declare_parameter("min_cluster_size", 6)
@@ -104,7 +118,11 @@ class FrontierExplorer(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        self.create_subscription(OccupancyGrid, "/map", self._on_map, MAP_QOS)
+        # Both /map and Nav2's costmap topics publish TRANSIENT_LOCAL, so the
+        # one QoS profile serves either choice of map_topic.
+        map_topic = self.get_parameter("map_topic").value
+        self.create_subscription(OccupancyGrid, map_topic, self._on_map, MAP_QOS)
+        self.get_logger().info(f"reading occupancy grid from {map_topic}")
 
         self._expr_pub = None
         if _HAVE_EXPRESSIONS and bool(self.get_parameter("publish_expressions").value):

@@ -134,31 +134,59 @@ the point lands on whichever surface faces the robot, not the object's centroid.
 
 ---
 
-### Warehouse world (work in progress)
+### Warehouse world
 
-A second, much larger environment is included — roughly 25 × 40 m of
-industrial space with shelving rows, pallets and a parked Tugbot, assembled
-from OpenRobotics' *Tugbot in Warehouse* Fuel models:
+A second, much larger environment — roughly 25 × 40 m of industrial space with
+shelving rows, pallets and a parked Tugbot, assembled from OpenRobotics'
+*Tugbot in Warehouse* Fuel models, which download and cache on first launch.
+
+<p align="center">
+  <img src="docs/media/warehouse_mapping.gif" width="60%" alt="Autonomous exploration of the warehouse">
+</p>
+
+Shelf rows in black, aisles in white, the robot's driven path in orange. Run
+it with:
 
 ```bash
-ros2 launch burgerbot_bringup testbed.launch.py world_name:=tugbot_warehouse goal_timeout:=240.0
+ros2 launch burgerbot_bringup testbed.launch.py \
+    world_name:=tugbot_warehouse \
+    map_topic:=/global_costmap/costmap \
+    goal_timeout:=240.0
 ```
 
-**Status: the world is solid, autonomous mapping in it is not yet.** What
-works: the world loads, all seven Fuel models download and cache, the robot
-spawns correctly in the central aisle, and Nav2, the controllers, SLAM and the
-recovery behaviours all come up healthy. The camera confirms the scene renders
-properly and the lidar reads it correctly — 278 of 360 beams returning between
-3.1 and 11.9 m.
+Two of those arguments carry the interesting caveats.
 
-What does not: `slam_toolbox` does not grow the map here. It stays at roughly
-1,000 free cells through several full in-place rotations, so frontier
-exploration has nothing to target and the robot stays put. Scans are not being
-dropped and the sensor registers normally, so the cause is in map integration
-rather than sensing. Unresolved.
+`goal_timeout` scales with the space rather than the robot: a warehouse
+frontier can be 20 m away, far longer than the room-sized default allows, and
+a goal that times out is blacklisted as unreachable even while the robot is
+driving toward it perfectly well.
 
-Two genuine exploration bugs surfaced while chasing this and are fixed, both
-of which affect any large or slow-loading world:
+`map_topic` is a workaround, and worth being straight about. **`slam_toolbox`
+does not grow its map in this world** — it holds at roughly 1,000 free cells
+indefinitely, so there is never a frontier to drive to. Pointing the explorer
+at Nav2's global costmap instead sidesteps that: the costmap fuses the same
+`/scan` data live, publishes in the same `map` frame and the same occupancy
+encoding, and is demonstrably accurate here. The robot explores properly on
+it, covering roughly 18 × 18 m in the run above.
+
+The trade is real. The costmap is rolling, robot-centric and has no loop
+closure, so it is a diagnostic and demo path, not a substitute for SLAM. On
+`test_room`, where `slam_toolbox` works normally, leave `map_topic` at its
+`/map` default.
+
+The underlying SLAM failure is unexplained. Ruled out by measurement, not
+assumption: sensing (278 of 360 beams returning 3.15–11.92 m), robot placement
+(the onboard camera shows it correctly in the aisle), being physically stuck
+(a 1.18 rad odometry turn matched a 3.28 m mean change in the scan), the
+bootstrap rotation (the failure predates that code), CPU starvation (real-time
+factor was 1.00), TF (the transform SLAM needs resolves for 162 of 164 scans),
+message timestamps (0.20 s lag in the warehouse versus 0.14 s in the working
+room), and a second lidar colliding on `/scan` (twelve consecutive scans are
+homogeneous at exactly the configured 5 Hz, and the Tugbot's own sensors sit
+on scoped topics).
+
+Two genuine exploration bugs did surface while chasing it, both affecting any
+large or slow-loading world:
 
 - Completion was declared against an all-unknown map, before SLAM had
   processed its first scan, and that completion latched permanently. It now

@@ -24,6 +24,20 @@ def generate_launch_description():
 
     world_name_arg = DeclareLaunchArgument(name="world_name", default_value="empty")
 
+    # Spawn height above the world origin. Default 0.0 keeps the behaviour
+    # every existing world was tuned against; raise it to drop the robot in
+    # from a height, which is the quickest way to tell a robot that is stuck
+    # in geometry from one that is merely idle -- a free robot visibly falls
+    # and settles, a trapped one does not. Worth a few centimetres rather
+    # than a metre: a long drop lands hard enough to bounce or tip a robot
+    # this light.
+    spawn_z_arg = DeclareLaunchArgument(
+        name="spawn_z",
+        default_value="0.0",
+        description="Height (m) to spawn the robot at. Try 0.15 to watch it "
+        "drop and settle.",
+    )
+
     world_path = PathJoinSubstitution([
             burgerbot_description,
             "worlds",
@@ -71,7 +85,8 @@ def generate_launch_description():
         executable="create",
         output="screen",
         arguments=["-topic", "robot_description",
-                   "-name", "burgerbot"],
+                   "-name", "burgerbot",
+                   "-z", LaunchConfiguration("spawn_z")],
     )
 
     gz_ros2_bridge = Node(
@@ -90,6 +105,7 @@ def generate_launch_description():
     return LaunchDescription([
         model_arg,
         world_name_arg,
+        spawn_z_arg,
         gazebo_resource_path,
         robot_state_publisher_node,
         gazebo,

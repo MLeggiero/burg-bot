@@ -35,6 +35,8 @@ from .arbiter import (
     PRIORITY_TASK,
     Candidate,
     MoodArbiter,
+    bid_source,
+    candidate_from_bid,
 )
 
 # rcl_action's status topic QoS. Getting this wrong means silently receiving
@@ -104,6 +106,18 @@ class MoodArbiterNode(Node):
         )
         self.create_subscription(BatteryState, "/battery_state", self._on_battery, 10)
         self.create_subscription(TouchEvent, "/face/touch", self._on_touch, 10)
+
+        # The inlet for sources that live in other packages -- the companion
+        # behaviour, the explorer, anything added later. Without it the only
+        # way for another node to affect the face is to publish straight to
+        # /face/expression, which does not join the arbitration, it competes
+        # with its result: two publishers on one topic, each winning whenever
+        # it happened to publish last. The face then flickers between them,
+        # which reads as broken rather than as conflicted -- the exact failure
+        # this whole file exists to prevent, reintroduced one package over.
+        self.create_subscription(
+            ExpressionCommand, "/face/expression_bid", self._on_bid, 10
+        )
 
         # The floor. Something must always be bidding, or the face has no
         # defined state between events.
@@ -290,6 +304,28 @@ class MoodArbiterNode(Node):
             )
         else:
             self.arbiter.clear("battery")
+
+    def _on_bid(self, msg: ExpressionCommand) -> None:
+        """A bid from another package, submitted like any internal source."""
+        if not msg.expression:
+            # An empty expression is how a source stands down. Clearing is
+            # explicit rather than inferred from silence, because a source that
+            # simply stops publishing may equally have crashed, and those two
+            # want opposite treatment.
+            self.arbiter.clear(bid_source(msg.source))
+            return
+
+        self.arbiter.submit(
+            candidate_from_bid(
+                source=msg.source,
+                expression=msg.expression,
+                intensity=msg.intensity,
+                priority=msg.priority,
+                blend_time=msg.blend_time,
+                duration=msg.duration.sec + msg.duration.nanosec * 1e-9,
+                now=self._now(),
+            )
+        )
 
     def _on_touch(self, msg: TouchEvent) -> None:
         if msg.type != TouchEvent.TYPE_DOWN:

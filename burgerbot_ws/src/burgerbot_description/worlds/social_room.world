@@ -1,0 +1,272 @@
+<?xml version="1.0" ?>
+<!--
+  Testbed for burgerbot_companion: a room with people walking around in it.
+
+  Bigger than test_room (8 x 6 m interior rather than 4 x 4) because the
+  companion behaviour is about distance. Approach starts at up to 6 m, the
+  robot stops at a 1.1 m standoff, and "walking away" is measured over a
+  metre or so of travel - none of which has anywhere to happen in a 4 m box.
+
+  Two actors, each staging one of the behaviours worth watching:
+
+    visitor  walks up to about a metre, stands there a while, then leaves.
+             This is the happy path: the robot notices, comes over, engages,
+             and sometimes dances.
+
+    aloof    walks toward the robot to about two metres - close enough, and
+             facing it, so the robot commits to an approach - then turns and
+             retreats to five. Never enters engage_distance, so nothing ever
+             resets the count, and after three loops the robot gives up and
+             looks sad. This is the only way to stage that behaviour
+             reproducibly; a real person cannot walk away on cue three times
+             running with the same timing.
+
+  ============================ IMPORTANT ============================
+  Gazebo actors have no collision geometry. The camera sees them, which is
+  what the whole social stack runs on - but the LIDAR DOES NOT, so they do
+  not appear in the costmap, do not trigger the safety stop, and the robot
+  will drive straight through one.
+
+  In this world the only thing keeping the robot off a person is the
+  companion's own standoff. On the real robot the lidar does see people and
+  Nav2's obstacle layer and burgerbot_utils' safety stop both apply. So a
+  clean run here is evidence the *behaviour* is right; it is not evidence
+  the robot is safe around people. Those are separate claims and this world
+  can only support the first one.
+  ===================================================================
+
+  Actor meshes come from Fuel and cache on first launch, like test_room's
+  chair and the Tugbot warehouse props.
+-->
+<sdf version="1.7">
+    <world name="social_room">
+        <physics type="ode">
+            <max_step_size>0.01</max_step_size>
+        </physics>
+
+        <light type="directional" name="sun">
+            <cast_shadows>true</cast_shadows>
+            <pose>0 0 10 0 0 0</pose>
+            <diffuse>0.9 0.9 0.9 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+            <attenuation>
+                <range>1000</range>
+                <constant>0.9</constant>
+                <linear>0.01</linear>
+                <quadratic>0.001</quadratic>
+            </attenuation>
+            <direction>-0.4 0.2 -0.9</direction>
+        </light>
+
+        <!-- A second light from the opposite side. One directional light
+             leaves an actor's face in shadow whenever they walk toward it,
+             and a face in shadow is a face neither the person detector's
+             keypoints nor face recognition can do much with. -->
+        <light type="directional" name="fill">
+            <cast_shadows>false</cast_shadows>
+            <pose>0 0 8 0 0 0</pose>
+            <diffuse>0.4 0.4 0.45 1</diffuse>
+            <specular>0.0 0.0 0.0 1</specular>
+            <direction>0.6 -0.3 -0.8</direction>
+        </light>
+
+        <model name="ground_plane">
+            <static>true</static>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><plane><normal>0 0 1</normal></plane></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <plane><normal>0 0 1</normal><size>100 100</size></plane>
+                    </geometry>
+                    <material>
+                        <ambient>0.75 0.73 0.70 1</ambient>
+                        <diffuse>0.75 0.73 0.70 1</diffuse>
+                        <specular>0.1 0.1 0.1 1</specular>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Walls: 8 x 6 m interior, 0.1 m thick, 2 m tall. Enclosed, so the
+             frontier explorer still converges here if you run it. -->
+        <model name="wall_north">
+            <static>true</static>
+            <pose>0 3.05 1.0 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>8.2 0.1 2.0</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>8.2 0.1 2.0</size></box></geometry>
+                    <material>
+                        <ambient>0.72 0.72 0.75 1</ambient>
+                        <diffuse>0.72 0.72 0.75 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="wall_south">
+            <static>true</static>
+            <pose>0 -3.05 1.0 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>8.2 0.1 2.0</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>8.2 0.1 2.0</size></box></geometry>
+                    <material>
+                        <ambient>0.72 0.72 0.75 1</ambient>
+                        <diffuse>0.72 0.72 0.75 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="wall_east">
+            <static>true</static>
+            <pose>4.05 0 1.0 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>0.1 6.2 2.0</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>0.1 6.2 2.0</size></box></geometry>
+                    <material>
+                        <ambient>0.72 0.72 0.75 1</ambient>
+                        <diffuse>0.72 0.72 0.75 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="wall_west">
+            <static>true</static>
+            <pose>-4.05 0 1.0 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><box><size>0.1 6.2 2.0</size></box></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><box><size>0.1 6.2 2.0</size></box></geometry>
+                    <material>
+                        <ambient>0.72 0.72 0.75 1</ambient>
+                        <diffuse>0.72 0.72 0.75 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Something for SLAM to key off besides four bare walls, tucked into
+             a corner well clear of both walking routes. -->
+        <model name="pillar">
+            <static>true</static>
+            <pose>-2.6 2.0 0.6 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry><cylinder><radius>0.25</radius><length>1.2</length></cylinder></geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry><cylinder><radius>0.25</radius><length>1.2</length></cylinder></geometry>
+                    <material>
+                        <ambient>0.85 0.4 0.2 1</ambient>
+                        <diffuse>0.85 0.4 0.2 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <include>
+            <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/WoodenChair</uri>
+            <name>chair</name>
+            <pose>-3.0 -2.2 0 0 0 0.6</pose>
+        </include>
+
+        <!-- ================= visitor: the happy path =================
+             Comes to ~1.1 m (inside engage_distance 1.4), stands for six
+             seconds, then leaves. Approaches along -x facing the robot, so
+             heading-of-travel puts engagement near 1 and the robot will
+             commit even with the bbox-only detector, which has no keypoints
+             to estimate orientation from.
+
+             Waypoint times set a walking pace of roughly 0.5 m/s. Faster than
+             about 0.8 m/s and the 1.5 Hz onboard detector cannot keep a track
+             on them: they move further between frames than the tracker's 1 m
+             association gate allows. -->
+        <actor name="visitor">
+            <skin>
+                <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+                <scale>1.0</scale>
+            </skin>
+            <animation name="walk">
+                <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+                <interpolate_x>true</interpolate_x>
+            </animation>
+            <script>
+                <loop>true</loop>
+                <delay_start>2.0</delay_start>
+                <auto_start>true</auto_start>
+                <!-- tension 0 keeps the path straight between waypoints; the
+                     spline smoothing a higher tension applies would round the
+                     turns and drift the actor off the intended distances. -->
+                <trajectory id="0" type="walk" tension="0.0">
+                    <waypoint><time>0</time><pose>3.6 -1.4 1.0 0 0 3.14159</pose></waypoint>
+                    <waypoint><time>6</time><pose>0.9 -0.7 1.0 0 0 3.14159</pose></waypoint>
+                    <!-- Standing still. The animation keeps walking on the
+                         spot, which looks odd but detects fine - and a
+                         stationary person is the case that matters, because
+                         it is when the robot has to decide to come over. -->
+                    <waypoint><time>12</time><pose>0.9 -0.7 1.0 0 0 3.14159</pose></waypoint>
+                    <waypoint><time>13</time><pose>0.9 -0.7 1.0 0 0 0</pose></waypoint>
+                    <waypoint><time>19</time><pose>3.6 -1.4 1.0 0 0 0</pose></waypoint>
+                    <waypoint><time>21</time><pose>3.6 -1.4 1.0 0 0 3.14159</pose></waypoint>
+                    <waypoint><time>23</time><pose>3.6 -1.4 1.0 0 0 3.14159</pose></waypoint>
+                </trajectory>
+            </script>
+        </actor>
+
+        <!-- ================= aloof: the sad path =================
+             Approaches to about 2 m - close enough and facing the robot, so
+             it commits to an approach - then turns and retreats to about 5.
+             Two things make this stage the behaviour rather than merely look
+             like it:
+
+               * The near waypoint sits outside engage_distance (1.4 m), so
+                 the robot never arrives and never resets the count. Bring it
+                 any closer and the robot engages, the record clears, and it
+                 will never get sad no matter how many times this loops.
+               * The retreat covers about 3 m of the actor's own outward
+                 travel, comfortably past the 1.2 m that counts as walking
+                 away, with margin for the robot having moved meanwhile.
+
+             Three loops is a little over a minute, which is when the sad face
+             and the withdrawal should appear. -->
+        <actor name="aloof">
+            <skin>
+                <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+                <scale>1.0</scale>
+            </skin>
+            <animation name="walk">
+                <filename>https://fuel.gazebosim.org/1.0/Mingfei/models/actor/tip/files/meshes/walk.dae</filename>
+                <interpolate_x>true</interpolate_x>
+            </animation>
+            <script>
+                <loop>true</loop>
+                <delay_start>0.0</delay_start>
+                <auto_start>true</auto_start>
+                <trajectory id="0" type="walk" tension="0.0">
+                    <waypoint><time>0</time><pose>4.4 2.3 1.0 0 0 3.54159</pose></waypoint>
+                    <waypoint><time>7</time><pose>1.8 1.0 1.0 0 0 3.54159</pose></waypoint>
+                    <!-- A pause facing the robot, long enough for it to
+                         notice (watch_before_approach is 1 s) and set off. -->
+                    <waypoint><time>11</time><pose>1.8 1.0 1.0 0 0 3.54159</pose></waypoint>
+                    <waypoint><time>12</time><pose>1.8 1.0 1.0 0 0 0.4</pose></waypoint>
+                    <waypoint><time>19</time><pose>4.4 2.3 1.0 0 0 0.4</pose></waypoint>
+                    <waypoint><time>21</time><pose>4.4 2.3 1.0 0 0 3.54159</pose></waypoint>
+                </trajectory>
+            </script>
+        </actor>
+    </world>
+</sdf>

@@ -22,6 +22,17 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   # Perception / semantic mapping
   "msg/SemanticObject.msg"
   "msg/SemanticMap.msg"
+  # People: raw per-frame detections, then persistent map-frame tracks
+  "msg/PersonDetection2D.msg"
+  "msg/PersonDetection2DArray.msg"
+  "msg/Person.msg"
+  "msg/PersonArray.msg"
+  # Companion behaviour telemetry
+  "msg/SocialState.msg"
+  "srv/EnrollPerson.srv"
+  # Conversation
+  "msg/DialogTurn.msg"
+  "srv/NamePlace.srv"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs
 )
 

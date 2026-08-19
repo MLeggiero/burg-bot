@@ -1,0 +1,142 @@
+person_detector_lite:
+  ros__parameters:
+    detections_topic: "/perception/detections2d"
+    output_topic: "/perception/people_detections"
+    person_label: "person"
+
+    # Lower than the shared detector's 0.45. A person is deformable, often
+    # partly occluded and frequently facing away, and scores lower than a
+    # chair does. The tracker's min_hits is the real false-positive filter,
+    # so this can afford to be permissive.
+    score_threshold: 0.30
+
+person_detector_gpu:
+  ros__parameters:
+    # A pose model, not a plain detector: the keypoints are the whole reason
+    # to run this instead of person_detector_lite. yolo11n-pose is the small
+    # one and is far more than a 5070 Ti needs -- move up to yolo11s-pose or
+    # yolo11m-pose if you want better keypoints at range, the GPU will not
+    # notice.
+    model: "yolo11n-pose.pt"
+    device: "cuda:0"
+    half: true
+    imgsz: 640
+    score_threshold: 0.35
+
+    # Person tracking wants 15-20 Hz; above that the tracker gains nothing and
+    # the network carries frames nobody reads.
+    max_rate_hz: 20.0
+
+    # JPEG over the network rather than raw frames. 640x480 RGB at 15 fps is
+    # ~110 Mbit/s raw, which a Pi on WiFi cannot sustain and which starves the
+    # rest of the ROS graph well before it saturates the link.
+    use_compressed: true
+    image_topic: "/camera/camera/color/image_raw"
+    output_topic: "/perception/people_detections"
+
+face_identity:
+  ros__parameters:
+    image_topic: "/camera/camera/color/image_raw"
+    use_compressed: true
+    output_topic: "/perception/face_identities"
+
+    model_pack: "buffalo_l"
+    use_gpu: true
+    det_size: 640
+
+    # Slower than person detection deliberately: an identity does not change
+    # between frames, and the vote in person_tracker is what decides, not any
+    # single match.
+    max_rate_hz: 5.0
+
+    # Cosine similarity below which a face is called a stranger. Genuinely
+    # model specific. Set it by measuring rather than guessing: enrol two
+    # people, watch the similarity reported for correct and incorrect
+    # pairings, and put this between the two populations.
+    match_threshold: 0.42
+    # How far the winner must beat the runner-up. Two people who look alike
+    # both score highly; the gap between them is the better confidence signal.
+    match_margin: 0.05
+    max_embeddings: 12
+
+    # A face smaller than this is a few pixels of cheekbone and produces an
+    # embedding that matches everybody equally badly.
+    min_face_pixels: 48
+    # Variance-of-Laplacian floor. A blurred enrolment is worse than none: it
+    # drags the stored set toward a smeared average that then half-matches
+    # everyone.
+    min_sharpness: 40.0
+    enroll_views: 6
+    enroll_timeout: 20.0
+
+    # Outside the repo and outside the maps directory on purpose. Face
+    # embeddings are not map data, and keeping them here means `git add -A`
+    # cannot sweep somebody's biometrics into a public repository.
+    # state_directory defaults to ~/.burgerbot
+    gallery_file: "faces.yaml"
+    autoload: true
+    autosave: true
+
+person_tracker:
+  ros__parameters:
+    map_frame: "map"
+    robot_frame: "base_footprint"
+    detections_topic: "/perception/people_detections"
+    depth_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
+
+    # Wider than object_projector's 3: a person is a large, soft target and
+    # the sample point is more likely to land near an edge.
+    depth_sample_radius: 4
+    # Tighter for keypoints, which are single points on a curved body part --
+    # widening starts sampling whatever is behind the shoulder.
+    keypoint_sample_radius: 2
+    keypoint_min_confidence: 0.5
+    min_depth_m: 0.3
+    max_depth_m: 8.0
+    sync_slop: 0.15
+    # Has to cover however long inference takes, including a network round
+    # trip when detection is offloaded, or the depth frame each detection
+    # needs is already evicted when the detection arrives. See
+    # object_projector.py for the full version of this story.
+    sync_queue_size: 60
+
+    publish_rate: 10.0
+    publish_markers: true
+    # Safety net for the detector process dying. Normal "nobody is here" is
+    # an empty detections message, which ages tracks out on its own.
+    detection_timeout: 1.0
+
+    # ---- tracking ----
+    # Metres an observation may sit from a track's predicted position and
+    # still be the same person. Has to cover a walking pace times the
+    # detection interval, less whatever prediction absorbs. Too wide and two
+    # people passing each other swap identities.
+    match_radius: 1.0
+    # How long a person may go unseen before their track is deleted. Long
+    # enough to walk behind furniture, short enough that somebody who has
+    # actually left stops being somewhere the robot will go and stand.
+    max_coast: 1.5
+    # How long the *pipeline* may stall before its predictions become
+    # fiction. A different question from max_coast -- conflating them
+    # extrapolates a walking track metres across the map on a hiccup.
+    max_predict: 0.6
+    # Detections before a track is acted on. The false positive this exists
+    # for is specific: a coat over a chair reads as a person for a frame or
+    # two, and without this the robot goes to greet it.
+    min_hits: 3
+    min_confidence: 0.35
+    # Below this speed, heading of travel says nothing about orientation --
+    # a motionless person would appear to face whichever way noise last
+    # pushed them.
+    min_speed_for_heading: 0.25
+
+    # ---- names ----
+    face_identities_topic: "/perception/face_identities"
+    identity_vote_window: 8.0
+    identity_min_votes: 3
+    # Pixels between a face box centre and a person box centre for them to be
+    # the same person. Generous because the two bound different things -- a
+    # head and a whole body -- and their centres are half a torso apart by
+    # construction.
+    identity_match_pixels: 220.0

@@ -17,6 +17,12 @@ string CURIOUS_TILT=curious_tilt  # slow yaw scan, as if looking around
 string CELEBRATE=celebrate        # full spin
 string ANTICIPATE=anticipate      # tiny reverse before departing
 string RECOIL=recoil              # sharp back-off after a surprise
+# Companion gestures, chosen by burgerbot_companion when it decides to dance
+# for somebody. Every one of them still goes through the same feasibility
+# gate, so a dance in a corridor too tight for it simply does not happen.
+string DANCE=dance                # three-part phrase: rock, sweep, shimmy
+string SPIN_DELIGHT=spin_delight  # two wide pleased sweeps
+string BOUNCE=bounce              # excited forward/back bobbing
 
 # ---- Goal ----
 string gesture

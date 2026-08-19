@@ -34,7 +34,11 @@ def test_velocities_stay_within_sane_bounds(name):
         assert abs(angular) <= 2.5, f"{name} angular {angular} at t={t}"
 
 
-@pytest.mark.parametrize("name", ["nod_yes", "shake_no", "wiggle", "curious_tilt"])
+@pytest.mark.parametrize(
+    "name",
+    ["nod_yes", "shake_no", "wiggle", "curious_tilt",
+     "dance", "spin_delight", "bounce"],
+)
 def test_oscillating_gestures_return_to_start(name):
     """Net displacement over one cycle must be ~zero.
 
@@ -53,6 +57,50 @@ def test_oscillating_gestures_return_to_start(name):
 
     assert abs(net_linear) < 1e-3, f"{name} drifts {net_linear:.4f} m per cycle"
     assert abs(net_angular) < 1e-3, f"{name} drifts {net_angular:.4f} rad per cycle"
+
+
+def test_each_part_of_the_dance_balances_on_its_own():
+    """Not just the dance as a whole -- every segment of it.
+
+    A dance is the one gesture likely to be cut short: it is long, it runs
+    within a metre of somebody, and the feasibility gate stops it exactly at
+    the moments the direction of travel changes, which are the segment
+    boundaries. If only the complete phrase balanced, every interrupted dance
+    would leave the robot slightly rotated, and wheel odometry would drift for
+    reasons nothing in the navigation stack could explain.
+    """
+    spec = gestures.get("dance")
+    boundaries = [0.0, 0.30, 0.62, 1.0]
+    for start, end in zip(boundaries, boundaries[1:]):
+        steps = 2000
+        dt = spec.duration * (end - start) / steps
+        net_linear = net_angular = 0.0
+        for i in range(steps):
+            t = spec.duration * start + i * dt
+            (linear, angular), _, _ = gestures.sample("dance", t)
+            net_linear += linear * dt
+            net_angular += angular * dt
+        assert abs(net_linear) < 1e-3, f"segment {start}-{end} drifts {net_linear:.4f} m"
+        assert abs(net_angular) < 1e-3, f"segment {start}-{end} drifts {net_angular:.4f} rad"
+
+
+def test_the_dance_is_a_phrase_with_parts_not_one_oscillation():
+    """What separates dancing from twitching is movements of different character."""
+    spec = gestures.get("dance")
+    samples = [
+        gestures.sample("dance", spec.duration * p)[0] for p in (0.1, 0.45, 0.85)
+    ]
+    translating, sweeping, shimmying = samples
+    assert abs(translating[0]) > 0.01 and abs(translating[1]) < 1e-9
+    assert abs(sweeping[1]) > 0.1 and abs(sweeping[0]) < 1e-9
+    assert abs(shimmying[1]) > 0.1
+
+
+def test_companion_gestures_are_declared_with_the_right_translation_flag():
+    """The gate checks clearance ahead only for gestures that actually move."""
+    assert gestures.get("dance").translates
+    assert gestures.get("bounce").translates
+    assert not gestures.get("spin_delight").translates
 
 
 def test_celebrate_is_close_to_one_full_turn():

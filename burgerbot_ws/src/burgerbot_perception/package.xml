@@ -12,6 +12,14 @@
     them as RViz markers, saved/loaded alongside the SLAM map. Entirely
     additive -- none of navigation, localization, or exploration depends on
     this package existing.
+
+    Also tracks people, which is a separate pipeline rather than a filter on
+    the object one: semantic mapping averages every sighting of a thing into
+    one position, which is right for a chair and nonsense for somebody
+    walking. person_tracker turns per-frame detections into map-frame tracks
+    with velocity and body orientation; person_detector_gpu and face_identity
+    are the optional offloaded halves, meant to run on a machine with a GPU
+    rather than on the Pi.
   </description>
   <maintainer email="mark.leggiero1@gmail.com">Mark Leggiero</maintainer>
   <license>Apache-2.0</license>
@@ -26,6 +34,10 @@
   <depend>cv_bridge</depend>
   <depend>image_geometry</depend>
   <depend>message_filters</depend>
+  <!-- republish, for creating the compressed colour stream the offloaded
+       detector reads. Gazebo's ros_gz bridge publishes raw images only. -->
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>compressed_image_transport</exec_depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>python3-numpy</depend>
@@ -33,7 +45,14 @@
   <depend>python3-yaml</depend>
   <exec_depend>realsense2_camera</exec_depend>
   <!-- ai-edge-litert has no rosdep key; installed via pip, see
-       scripts/export_detection_model.sh and the README. -->
+       scripts/export_detection_model.sh and the README.
+
+       Neither do ultralytics (person_detector_gpu) or insightface +
+       onnxruntime-gpu (face_identity). Both are deliberately left out rather
+       than added as pip exec_depends: they pull in PyTorch and CUDA, they are
+       only ever wanted on the control PC, and listing them here would have
+       every `rosdep install` on the robot try to fetch several gigabytes of
+       GPU stack the Pi cannot use. See the offload section of the README. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

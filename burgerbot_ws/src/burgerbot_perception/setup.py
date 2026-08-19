@@ -36,6 +36,13 @@ setup(
             "object_detector = burgerbot_perception.object_detector:main",
             "object_projector = burgerbot_perception.object_projector:main",
             "semantic_map = burgerbot_perception.semantic_map:main",
+            # People. person_tracker runs on the robot; the gpu detector and
+            # face recognition are meant for a control PC -- see
+            # launch/people.launch.py.
+            "person_detector_lite = burgerbot_perception.person_detector_lite:main",
+            "person_detector_gpu = burgerbot_perception.person_detector_gpu:main",
+            "person_tracker = burgerbot_perception.person_tracker:main",
+            "face_identity = burgerbot_perception.face_identity:main",
         ],
     },
 )

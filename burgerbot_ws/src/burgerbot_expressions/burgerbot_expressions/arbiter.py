@@ -44,6 +44,47 @@ class Candidate:
         return self.expires_at is None or now < self.expires_at
 
 
+#: Prefix applied to the source name of any bid arriving from another package.
+#:
+#: Sources inside mood_arbiter own bare keys ("proximity", "battery", "nav").
+#: Nothing stops a node elsewhere publishing a bid with source="proximity", and
+#: since a source's bid *replaces* that source's previous one, an unprefixed
+#: collision would silently take over the startle response -- a safety
+#: behaviour disabled by a name clash, with nothing in any log to say so.
+#: Prefixing also survives into the published winner, which is worth having on
+#: its own: "bid:companion" says where a mood came from.
+BID_PREFIX = "bid:"
+
+
+def bid_source(source: str) -> str:
+    return BID_PREFIX + (source or "unknown")
+
+
+def candidate_from_bid(
+    source: str,
+    expression: str,
+    intensity: float,
+    priority: int,
+    blend_time: float,
+    duration: float,
+    now: float,
+) -> "Candidate":
+    """Build a candidate from another package's ExpressionCommand.
+
+    Duration zero means "until replaced or cleared", matching the message's
+    documented semantics and how the internal sources behave.
+    """
+    return Candidate(
+        source=bid_source(source),
+        expression=expression,
+        intensity=float(intensity),
+        priority=int(priority),
+        blend_time=float(blend_time),
+        expires_at=now + duration if duration > 0.0 else None,
+        stamp=now,
+    )
+
+
 @dataclass
 class MoodArbiter:
     """Holds one live candidate per source and decides which wins."""

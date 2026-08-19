@@ -12,15 +12,18 @@ a hand-rolled action client -- it already handles the action lifecycle
 (waiting for the server, tracking feedback, timeouts) correctly, and using it
 means this file is about exploration policy, not action-client bookkeeping.
 
-Loosely coupled to the expression system: this node publishes ExpressionCommand
-directly only for "happy" on a completed sweep -- a whole-sweep event with no
-equivalent elsewhere. Everything else the face does while exploring (neutral
-on a clean run, nervous near a wall, focused/startled as appropriate) is
-mood_arbiter's own nav-status and proximity handling in burgerbot_expressions,
-which already arbitrates between sources properly; duplicating any of that
-here would just race it on the shared /face/expression topic. If
-burgerbot_expressions isn't running, the "happy" publish simply has no
-subscriber -- this node has no hard dependency on it.
+Loosely coupled to the expression system: this node bids for "happy" on a
+completed sweep -- a whole-sweep event with no equivalent elsewhere.
+Everything else the face does while exploring (neutral on a clean run, nervous
+near a wall, focused/startled as appropriate) is mood_arbiter's own nav-status
+and proximity handling in burgerbot_expressions, which already arbitrates
+between sources properly; duplicating any of that here would just compete with
+it. The bid goes to /face/expression_bid, mood_arbiter's inlet for sources in
+other packages, rather than to /face/expression itself -- publishing to the
+latter does not join the arbitration, it races the arbiter's own output, and
+whichever of the two published last wins. If burgerbot_expressions isn't
+running, the bid simply has no subscriber -- this node has no hard dependency
+on it.
 """
 
 import math
@@ -126,7 +129,9 @@ class FrontierExplorer(Node):
 
         self._expr_pub = None
         if _HAVE_EXPRESSIONS and bool(self.get_parameter("publish_expressions").value):
-            self._expr_pub = self.create_publisher(ExpressionCommand, "/face/expression", 10)
+            self._expr_pub = self.create_publisher(
+                ExpressionCommand, "/face/expression_bid", 10
+            )
 
         self._navigator = BasicNavigator()
 
@@ -308,13 +313,13 @@ class FrontierExplorer(Node):
             f"exploring -> ({frontier.x:.2f}, {frontier.y:.2f})  "
             f"size={frontier.size} dist={frontier.distance:.2f}"
         )
-        # No expression published here: mood_arbiter's own nav-status and
-        # proximity handling (neutral-while-clear, nervous-near-an-obstacle
-        # in mapping_mode) now owns this moment. Publishing "curious" here
-        # too raced it on the shared /face/expression topic -- face_node
-        # takes whichever message arrives last with no priority arbitration
-        # of its own, so the two would flicker against each other on every
-        # goal dispatch instead of one coherent state winning.
+        # No expression bid here: mood_arbiter's own nav-status and proximity
+        # handling (neutral-while-clear, nervous-near-an-obstacle in
+        # mapping_mode) already owns this moment, and bidding "curious" as
+        # well would put two candidates at the same TASK priority in front of
+        # the arbiter, where ties break toward whichever was submitted most
+        # recently. That is a coin toss decided by publish timing, not a
+        # decision -- and it would flip on every goal dispatch.
         self._exploring = True
         self._navigator.goToPose(goal)
 

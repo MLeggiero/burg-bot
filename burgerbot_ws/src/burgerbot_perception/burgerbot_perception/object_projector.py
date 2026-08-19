@@ -31,6 +31,8 @@ from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import Buffer, TransformListener
 from vision_msgs.msg import Detection2DArray, Detection3D, Detection3DArray
 
+from .projection import backproject, depth_scale_for, sample_depth
+
 
 class ObjectProjector(Node):
     def __init__(self):
@@ -109,7 +111,7 @@ class ObjectProjector(Node):
             return
 
         depth = self._bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
-        depth_scale = 0.001 if depth.dtype == np.uint16 else 1.0  # mm -> m
+        depth_scale = depth_scale_for(depth)
 
         out = Detection3DArray()
         out.header = detections.header
@@ -141,24 +143,38 @@ class ObjectProjector(Node):
     def _project_one(self, det2d, depth: np.ndarray, depth_scale: float):
         cx = int(det2d.bbox.center.position.x)
         cy = int(det2d.bbox.center.position.y)
-        r = self._depth_radius
-        h, w = depth.shape[:2]
-        y0, y1 = max(0, cy - r), min(h, cy + r + 1)
-        x0, x1 = max(0, cx - r), min(w, cx + r + 1)
-        patch = depth[y0:y1, x0:x1].astype(np.float32) * depth_scale
 
-        valid = patch[(patch >= self._min_depth) & (patch <= self._max_depth)]
-        if valid.size == 0:
+        # Sampling and back-projection both live in projection.py so that this
+        # node and person_tracker place things on the map by identical rules.
+        # They share a map; if one rejects a depth reading the other accepts,
+        # a chair and the person standing beside it get positioned differently
+        # and their relative geometry is quietly wrong.
+        #
+        # This also corrects an error in the version that lived here.
+        # PinholeCameraModel.projectPixelTo3dRay returns a *unit* vector, so
+        # scaling it by the depth value placed the point at that RANGE along
+        # the ray -- but an aligned depth image stores Z, the distance along
+        # the optical axis, not range. The two agree only at the principal
+        # point and diverge with angle from it, pulling off-centre objects
+        # toward the camera by 1/sqrt(1 + (dx/fx)^2 + (dy/fy)^2): a couple of
+        # percent near the middle of the frame, about 12% at the corner of a
+        # 640x480 image. It was never going to be noticed on the test-room
+        # chair, which sits near the centre and whose larger bbox-sampling
+        # offset is documented in the README.
+        z = sample_depth(
+            depth, cx, cy, self._depth_radius,
+            self._min_depth, self._max_depth, depth_scale,
+        )
+        if z is None:
             return None  # No plausible depth in the patch -- likely a
             # reflective/transparent surface or the object edge; skip rather
             # than fabricate a position from noise.
 
-        z = float(np.median(valid))
-        # PinholeCameraModel.projectPixelTo3dRay gives a unit ray through the
-        # pixel in the optical frame (+Z forward); scaling by z along that
-        # ray is the standard pinhole back-projection, not an approximation.
-        ray = self._cam_model.projectPixelTo3dRay((cx, cy))
-        return (ray[0] * z, ray[1] * z, ray[2] * z)
+        return backproject(
+            cx, cy, z,
+            self._cam_model.fx(), self._cam_model.fy(),
+            self._cam_model.cx(), self._cam_model.cy(),
+        )
 
     def _to_map_frame(self, point_cam, header):
         stamped = PointStamped()

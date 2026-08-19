@@ -96,6 +96,50 @@ def _recoil(phase: float, scale: float) -> Velocity:
     return -0.22 * scale * (1.0 - phase) ** 2, 0.0
 
 
+def _segment(phase: float, start: float, end: float) -> float:
+    """Local 0..1 phase within one part of a multi-part gesture."""
+    return (phase - start) / (end - start)
+
+
+def _dance(phase: float, scale: float) -> Velocity:
+    # Three movements in a row: rock, sweep, shimmy. A single oscillation reads
+    # as a twitch; what makes something read as *dancing* is a phrase with
+    # parts, and specifically parts of different character -- translation, then
+    # a slow rotation, then a fast one.
+    #
+    # Every segment is a whole number of sine cycles and so individually
+    # integrates to zero. That is stricter than making the gesture as a whole
+    # come out even, and deliberately: it means the dance can be interrupted at
+    # a segment boundary -- which is where the feasibility gate is most likely
+    # to stop it, since that is where the direction of travel changes -- and
+    # still leave the robot where it started. A gesture that only balances if
+    # it runs to completion quietly rotates the robot every time it does not.
+    if phase < 0.30:
+        return 0.10 * scale * math.sin(TWO_PI * 2.0 * _segment(phase, 0.0, 0.30)), 0.0
+    if phase < 0.62:
+        return 0.0, 1.6 * scale * math.sin(TWO_PI * _segment(phase, 0.30, 0.62))
+    local = _segment(phase, 0.62, 1.0)
+    return 0.0, 2.4 * scale * math.sin(math.pi * local) * math.sin(TWO_PI * 3.0 * local)
+
+
+def _spin_delight(phase: float, scale: float) -> Velocity:
+    # Two wide sweeps under the same symmetric window wiggle uses, but slower
+    # and further, so it reads as pleased rather than as agitated. The window
+    # times a whole number of cycles integrates to exactly zero for any integer
+    # count -- the product-to-sum expansion leaves only sine terms evaluated at
+    # whole multiples of pi.
+    envelope = math.sin(math.pi * phase)
+    return 0.0, 2.6 * scale * envelope * math.sin(TWO_PI * 2.0 * phase)
+
+
+def _bounce(phase: float, scale: float) -> Velocity:
+    # Happy forward/back bobbing, the translating counterpart to wiggle. Kept
+    # small: this runs within arm's reach of somebody, and the clearance the
+    # gesture server demands in front is only 0.35 m.
+    envelope = math.sin(math.pi * phase)
+    return 0.11 * scale * envelope * math.sin(TWO_PI * 3.0 * phase), 0.0
+
+
 GESTURES: Dict[str, GestureSpec] = {
     g.name: g
     for g in (
@@ -106,6 +150,12 @@ GESTURES: Dict[str, GestureSpec] = {
         GestureSpec("celebrate", 3.2, _celebrate, "goal reached"),
         GestureSpec("anticipate", 0.5, _anticipate, "about to set off", True),
         GestureSpec("recoil", 0.7, _recoil, "surprise, backing away", True),
+        # Companion gestures. burgerbot_companion picks between these when it
+        # decides to dance for somebody; the feasibility gate still applies, so
+        # a dance in a corridor too tight for it simply does not happen.
+        GestureSpec("dance", 3.4, _dance, "delight, showing off for someone", True),
+        GestureSpec("spin_delight", 1.8, _spin_delight, "pleased to see you"),
+        GestureSpec("bounce", 1.3, _bounce, "excited bobbing", True),
     )
 }
 

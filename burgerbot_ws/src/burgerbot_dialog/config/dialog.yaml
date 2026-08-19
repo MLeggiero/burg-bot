@@ -1,0 +1,107 @@
+dialog_manager:
+  ros__parameters:
+    map_frame: "map"
+    robot_frame: "base_footprint"
+    update_rate: 10.0
+    enabled: true
+
+    # ---- the model ----
+    # Any OpenAI-compatible endpoint. Ollama defaults to 11434, vLLM to 8000.
+    # Point this at the control PC's address when the model runs there rather
+    # than on the robot.
+    base_url: "http://localhost:11434/v1"
+    model: "qwen3:14b"
+
+    # Low, not zero. Zero makes a companion repeat itself word for word across
+    # turns, which is unsettling in a way a slightly different phrasing is not.
+    # High makes it wander off the output contract.
+    temperature: 0.4
+
+    # A two-sentence reply plus four short fields needs very little. This is
+    # the cheapest latency control available, and it also stops a model that
+    # has decided to write an essay.
+    max_tokens: 200
+
+    # Send a JSON-schema response_format. vLLM honours it; Ollama's support
+    # depends on version. Turn it off if the server rejects the request --
+    # schema.py validates defensively either way, which is why it assumes
+    # nothing about what the server promised.
+    use_schema: true
+
+    # Wall clock for one turn. Past this the robot stops waiting and says so.
+    # An answer nobody is still waiting for is not an answer.
+    request_timeout: 12.0
+
+    # Probe the endpoint at startup so an unreachable model is a line in the
+    # log at boot rather than a confused face several minutes later.
+    check_backend_at_startup: true
+
+    # ---- what it says ----
+    # Leave persona empty to use the default in prompt.py. Keep it short: a
+    # long persona crowds out the world state, and small models weight the end
+    # of a system prompt more heavily than the middle.
+    persona: ""
+
+    # Turns of history carried. Bounded because history is the part of the
+    # prompt that grows without limit, and it grows into latency.
+    max_history_turns: 8
+    # Objects described to the model, nearest first.
+    max_objects: 10
+    # Hard cap on one utterance. Everything the robot says is read off a small
+    # screen, and long answers are tiring.
+    max_say_chars: 320
+
+    # ---- timing, and what happens when the model is slow ----
+    # Seconds before the robot visibly starts thinking: gaze breaks away and
+    # the face goes focused. People look away while formulating and back when
+    # they are ready to answer, and with no mouth this is the strongest
+    # "working on it" signal available.
+    thinking_after: 0.8
+    # Seconds before it says something to fill the gap. No model is involved
+    # in producing that line, which is the point -- it has to work when the
+    # model is the thing that is broken.
+    stall_after: 3.5
+    # Seconds before it abandons the turn entirely.
+    give_up_after: 12.0
+    # Silence that ends the conversation and drops the history. Nothing is
+    # persisted: transcripts grow without bound and are a recording of private
+    # conversation nobody consented to.
+    conversation_timeout: 90.0
+
+    # Consecutive failures before the robot stops calling the model at all,
+    # and how long it waits before trying once more. This turns a dead endpoint
+    # from an eight-second silence on every single turn into a fast, honest
+    # "not right now".
+    failures_to_open: 3
+    circuit_cooldown: 60.0
+
+    # ---- rate limits ----
+    # Minimum seconds between gestures. Small instruct models are bad at
+    # leaving optional fields out -- they fill in everything -- so a model that
+    # asks for a gesture on every turn is the expected case, not a surprise,
+    # and a robot twitching on every sentence is unwatchable.
+    gesture_cooldown: 12.0
+    # Minimum seconds between commanded trips. Guards against both an
+    # over-eager model and somebody talking it into a loop.
+    nav_cooldown: 20.0
+
+    # ---- what it is allowed to do ----
+    enable_navigation: true
+    enable_gestures: true
+    # How far short of a named object to stop. Objects are stored as points on
+    # their near surface, so driving to the point means parking inside the
+    # furniture.
+    place_standoff: 0.9
+
+    # Above the companion's 55 so what the robot is saying shows through,
+    # below CONCERN (120) so a flat battery still outranks conversation.
+    # Deliberately not something the model can choose for itself.
+    expression_priority: 60
+    gaze_height: 1.5
+
+    # ---- places ----
+    # Alongside the companion's other state, outside the repo. Taught places
+    # only: nothing here infers that a region is a kitchen, and a guess stored
+    # in the same file as a fact would be indistinguishable from one later.
+    # state_directory defaults to ~/.burgerbot
+    places_file: "places.yaml"

@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>burgerbot_dialog</name>
+  <version>0.0.0</version>
+  <description>
+    Conversation with a local language model, in text.
+
+    The model produces intent and nothing else. What it says goes out as text;
+    the face it asks for is a bid to the mood arbiter, the gesture it asks for
+    goes through the gesture server's lidar feasibility gate, and a place it
+    asks to go to is resolved to a pose and handed to burgerbot_companion,
+    which owns the Nav2 client. So a model that hallucinates cannot produce a
+    velocity command, and every arbitration and safety layer that already
+    existed still applies.
+
+    All of the judgement is in modules with no ROS import and pytest coverage:
+    schema.py validates whatever the model returned and degrades per field
+    rather than per reply, conversation.py owns turn-taking and what happens
+    when the model is slow or dead, places.py resolves a spoken place name,
+    prompt.py assembles the context. The node does topics, actions and threads.
+
+    Text only. There is no microphone or speaker on this robot, and building
+    against a keyboard first is how a prompt gets tuned in milliseconds
+    instead of seconds.
+  </description>
+  <maintainer email="mark.leggiero1@gmail.com">Mark Leggiero</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>burgerbot_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>python3-yaml</depend>
+  <!-- The HTTP client. Chosen over a vendor SDK precisely because this has a
+       rosdep key: the robot's `rosdep install` resolves it like anything else
+       and no pip step is needed anywhere. -->
+  <depend>python3-requests</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,151 @@
+social_behavior:
+  ros__parameters:
+    map_frame: "map"
+    robot_frame: "base_footprint"
+    people_topic: "/perception/people"
+    update_rate: 10.0
+    enabled: true
+
+    # ---- proxemics ----
+    # Where the robot tries to end up. Hall's "personal distance" for people
+    # who know each other runs to about 1.2 m and "social distance" starts
+    # there; a knee-high robot reads as less intrusive than a person at the
+    # same distance, so the near end of social is about right.
+    standoff: 1.1
+    # Close enough to count as arrived. Sits outside the standoff so the robot
+    # stops before Nav2's goal tolerance starts nudging it further in.
+    engage_distance: 1.4
+    # Past this, they have left the conversation.
+    disengage_distance: 2.4
+    # Hard floor on how close a goal may be planned to a person, whatever
+    # standoff says.
+    personal_space: 0.75
+    # Widest angle off somebody's front the robot will approach from, radians.
+    # 1.05 is 60 degrees. Arriving at a person's back is the single most
+    # unsettling thing a mobile robot can do and it costs nothing to swing
+    # around.
+    max_front_offset: 1.05
+    # Further than this and somebody is scenery, not company.
+    max_approach_distance: 6.0
+
+    # ---- attention ----
+    # How squarely somebody must face the robot before it will approach.
+    # Deliberately above 0.5, which is what the tracker reports when it cannot
+    # tell -- so with a bbox-only detector and a stationary person the robot
+    # watches rather than advances, which is the right way to be wrong.
+    min_engagement_to_approach: 0.55
+    # Hysteresis, so attention does not flip between two people of nearly
+    # equal score every tick.
+    target_stickiness: 0.15
+    # Seconds alone before the robot goes and waits somewhere people usually
+    # are.
+    seek_after: 25.0
+    # A beat of visibly noticing somebody before setting off. Departing the
+    # instant a track confirms reads as a trigger firing; this reads as a
+    # decision. Same anticipation idea the gesture library is built on.
+    watch_before_approach: 1.0
+
+    # ---- walking away ----
+    # Metres of the person's OWN outward travel, during an approach the robot
+    # committed to, that count as them leaving. Roughly two paces: long enough
+    # to exclude shifting weight, short enough to notice before the robot has
+    # followed somebody across the room. Measured from their velocity along
+    # the line of sight, so the robot's own approach never counts and neither
+    # does somebody walking past.
+    rejection_travel: 1.2
+    # Walk-aways before the robot gives up and looks properly sad. Two is too
+    # eager -- people are legitimately busy. Three is a pattern.
+    rejections_for_sad: 3
+    # How long it then leaves that person alone.
+    withdraw_cooldown: 120.0
+    sad_duration: 8.0
+    # An approach that never arrives is a navigation problem, not a snub, and
+    # must not be counted as one -- otherwise the robot sulks about its own
+    # stuck wheels.
+    approach_timeout: 30.0
+
+    # ---- affinity ----
+    engage_reward: 0.25
+    reject_penalty: 0.30
+    engage_rate: 0.01
+    # Seconds for affinity to halve, in wall-clock time rather than uptime.
+    # ~1.2e6 is a fortnight: long enough that a friendship survives a holiday,
+    # short enough that nothing is permanent.
+    affinity_half_life: 1200000.0
+
+    # ---- dancing ----
+    # "Sometimes" is doing real work here. A robot that dances every time
+    # somebody comes near is a vending machine with a mechanism.
+    dance_cooldown: 45.0
+    dance_probability: 0.35
+    dance_min_affinity: 0.05
+    # Dancing at the back of somebody's head is just spinning.
+    dance_min_engagement: 0.5
+    dance_timeout: 12.0
+    dance_gestures: ["dance", "wiggle", "spin_delight"]
+    greet_gesture: "wiggle"
+    greet_cooldown: 60.0
+
+    # How far the target must move before the approach goal is re-sent. Nav2
+    # replans from scratch on every new goal, so streaming one per tick at a
+    # walking person leaves it permanently replanning and never driving.
+    replan_distance: 0.4
+
+    # Eye target height: a person's face, not their belt.
+    gaze_height: 1.5
+
+    # How long a commanded trip (from burgerbot_dialog, via
+    # /dialog/goal_request) may take before the robot gives up and returns to
+    # its own behaviour. Without an expiry, a goal Nav2 silently never
+    # completes would leave the companion permanently commanded and apparently
+    # inert -- which looks like the whole social layer having stopped working
+    # rather than like one trip having gone wrong.
+    commanded_timeout: 60.0
+
+    # ---- seeking ----
+    enable_seeking: true
+    seek_min_distance: 1.5
+    # Larger values make the robot more willing to cross the building for a
+    # busier spot; smaller keep it local.
+    seek_distance_scale: 8.0
+    seek_revisit_radius: 1.2
+    seek_memory: 3
+
+    # ---- persistence ----
+    # Outside the repo: this is robot state, not map data, and it holds
+    # per-person records.
+    # state_directory defaults to ~/.burgerbot
+    state_file: "companion_state.yaml"
+    autoload: true
+    # Periodic rather than on shutdown. The interesting failure is not a clean
+    # exit, it is the battery going flat -- which is exactly when no shutdown
+    # handler gets to run.
+    autosave_period: 120.0
+
+person_heatmap:
+  ros__parameters:
+    map_frame: "map"
+    people_topic: "/perception/people"
+
+    # Coarser than the 5 cm occupancy grid on purpose: this answers "which end
+    # of the room", not "which square centimetre", and a fine grid spreads the
+    # same evidence over so many cells that nothing accumulates.
+    resolution: 0.3
+    # Seconds for a cell to halve. Half an hour tracks the current day; much
+    # longer makes it a record of where people used to be, which sends the
+    # robot to wait hopefully in an empty room.
+    half_life: 1800.0
+    prune_below: 0.02
+
+    # Fraction of the busiest cell needed to count as a hotspot. Relative
+    # rather than absolute: the units are person-seconds at whatever rate the
+    # detector happened to run, so any absolute threshold needs retuning the
+    # moment the pipeline gets faster.
+    hotspot_fraction: 0.35
+    max_hotspots: 8
+    publish_rate: 1.0
+
+    # state_directory defaults to ~/.burgerbot
+    heatmap_file: "people_heatmap.yaml"
+    autoload: true
+    autosave_period: 120.0

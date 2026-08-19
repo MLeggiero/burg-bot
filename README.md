@@ -116,6 +116,152 @@ frame, and folded into a persistent de-duplicated object layer that saves as
 The object layer is deliberately parallel to the occupancy grid rather than
 part of it — a probability grid is not a place to store "this cell is a chair."
 
+### Companion behaviour
+
+The robot notices people, goes over to them, is visibly pleased to be there,
+occasionally dances, and stops bothering anyone who keeps walking away from it.
+
+Furniture and people need different machinery, which is why people get their own
+pipeline rather than a filter on the object one. Semantic mapping averages every
+sighting of a thing into one position — exactly right for a chair, nonsense for
+somebody walking across a room — and it wants to remember what it saw an hour
+ago, where a companion needs to know where you are *now*. So `person_tracker`
+runs a constant-velocity alpha-beta filter with gating, coasting through brief
+occlusions, and a confirmation count that stops a coat over a chair becoming
+somebody the robot goes to greet.
+
+Three things then decide the behaviour, all in `social.py` with no ROS in it:
+
+**Who to attend to.** Scored, not nearest-wins: somebody walking past at a metre
+is nearer than somebody across the room looking straight at the robot, and the
+second is unambiguously the better choice. Body orientation from pose keypoints
+is what separates those, and it costs almost nothing once a pose model is
+running. With no keypoints the tracker reports engagement as 0.5 — "no
+information" — which sits below the threshold to approach, so the robot watches
+rather than advances. That is the right way to be wrong.
+
+**Where to stand.** It stops at about 1.1 m and approaches from within 60° of
+your front, swinging round the short way rather than arriving at your back.
+Cheap to implement and the single biggest thing that makes a mobile robot read
+as socially aware rather than merely present.
+
+**When to be sad.** This is the one with a real risk of being wrong, and being
+wrong is expensive — a robot that reads ordinary passing traffic as rejection
+mopes constantly and is tiresome within an hour. So rejection is defined
+narrowly: measured only during an approach the robot actually committed to, and
+only from the person's *own* outward motion, integrating the component of their
+velocity along the line of sight. That excludes the robot's own approach, so
+driving toward somebody stationary never reads as them leaving, and it excludes
+anybody walking across the robot's view rather than away from it. One walk-away
+is a flicker of disappointment; three is a pattern, and the robot withdraws,
+looks properly sad, and leaves that person alone for a couple of minutes.
+
+Dancing is deliberately occasional. A robot that dances every time somebody
+comes near is a vending machine with a mechanism; one that dances sometimes,
+more readily for people it has spent time with, is a character. So a dance needs
+a long cooldown, a person actually facing it, positive affinity, and then a coin
+toss. The dances themselves are authored as pure functions of time in
+`gestures.py` alongside the existing library, each segment integrating to zero
+net yaw — a dance is the gesture most likely to be cut short by the feasibility
+gate, and one that only balances if it runs to completion would rotate the robot
+slightly every time it did not.
+
+Two smaller pieces round it out. Face embeddings put names to tracks, by vote
+over many frames rather than per-frame lookup, because a wrong name is far worse
+than no name — the robot greets the wrong person and starts filing its memories
+under somebody else. And a **person heatmap** accumulates where people actually
+are into a layer over the SLAM map, so "nobody is around" stops meaning "wander"
+and starts meaning "go and wait where people turn up". A kitchen and a corridor
+are identical on an occupancy grid and could not be less alike socially.
+
+The whole package sits on top of everything else and is required by none of it.
+Expression goes through the mood arbiter, body motion through the gesture
+server's feasibility gate, approaches through Nav2 — so every existing
+arbitration and safety layer still applies to a robot that has started following
+people around.
+
+### Talking to it
+
+A local language model runs the conversation. Text in, text out — there is no
+microphone or speaker on this robot, and building against a keyboard first is
+not a compromise: it is how a prompt gets tuned in milliseconds instead of
+seconds, and audio later bolts onto the same two topics.
+
+The model produces **intent and nothing else**. What it asks for goes through
+machinery that already exists and already refuses when it should — the face
+through the mood arbiter, so a flat battery still outranks conversation; the
+body through the gesture server, so its lidar gate still declines a dance there
+is no room for; and a destination through `burgerbot_companion`, which keeps
+sole ownership of the Nav2 client. A model that hallucinates cannot produce a
+velocity command. That is the same split as `gestures.py`/`gesture_server.py`
+and `social.py`/`social_behavior.py`, applied a third time, and it is the reason
+a VLA would be the wrong shape here: a policy that outputs actions collapses
+exactly the separation that makes this safe.
+
+Three things get more care than they look like they need:
+
+**The validator degrades per field, not per reply.** Small models get the enums
+wrong far more often than they get the prose wrong, so a hallucinated gesture
+name drops the gesture and keeps the sentence. Throwing away a good reply over
+one bad enum is what makes a companion feel broken. `schema.py` also copes with
+markdown fences, prose either side of the JSON, and braces inside the utterance
+— all shapes a local model actually returns.
+
+**Silence is handled explicitly.** Past a beat the robot breaks gaze and looks
+focused, which on a mouthless face is the strongest "working on it" signal
+available. Past a few seconds it says something from a static list — no model
+involved, because that has to work when the model is the thing that is broken.
+After repeated failures it stops calling at all for a minute, which turns a dead
+endpoint from an eight-second silence *every turn* into one honest "my head is
+offline".
+
+**Gestures are rate limited.** Small instruct models are bad at leaving optional
+fields out; they fill in everything. A model asking for a gesture on every turn
+is the expected case, and a robot twitching on every sentence is unwatchable.
+
+There are no room labels, so "go to the kitchen" resolves against places you
+taught it — drive there and name it — then against tracked objects, then
+against the person heatmap. Nothing infers that a region *is* a kitchen; when a
+name matches nothing the robot says so and asks to be shown, which is both the
+honest answer and the prompt that teaches it.
+
+### Offloading to a control PC
+
+The Pi 4 detects at 1.5 Hz, which is ample for labelling a chair and marginal
+for following a person: at a walking pace somebody covers most of a metre
+between frames. Everything works at that rate, and works better on a GPU.
+
+The split is asymmetric on purpose. Compressed colour goes **up** to the PC, and
+small detection messages come **back**; depth never leaves the robot, because it
+is the largest stream, the least compressible, and the only thing that needs it
+(`person_tracker`, which also needs the TF tree) is already sitting next to it.
+A 640×480 RGB stream at 15 fps is about 110 Mbit/s raw — a Pi on WiFi cannot
+sustain that, and it would starve the rest of the ROS graph long before it
+saturated the link. The same stream as JPEG is a couple of megabits.
+
+No new protocol, no bridge: both machines join the same `ROS_DOMAIN_ID` and the
+nodes do not know or care which host they are on.
+
+On the robot:
+
+```bash
+ros2 launch burgerbot_perception people.launch.py detector:=none publish_compressed:=true
+```
+
+On the PC:
+
+```bash
+ros2 launch burgerbot_perception people.launch.py detector:=gpu tracker:=false use_identity:=true
+```
+
+One hardware note, because the failure is misleading. An RTX 5070 Ti is
+Blackwell (`sm_120`), which needs CUDA 12.8 or newer and a matching PyTorch
+build. An older wheel installs and imports perfectly happily, then fails at the
+first kernel launch with *"no kernel image is available for execution on the
+device"* — which reads like a broken model rather than a version mismatch.
+`person_detector_gpu` checks `torch.cuda.get_arch_list()` at startup and says so
+plainly instead.
+
 ---
 
 ## Verified results
@@ -202,6 +348,11 @@ large or slow-loading world:
 Everything runs in a container — the workspace targets Ubuntu 24.04 / ROS 2
 Jazzy, which need not match your host.
 
+Setting up the real robot, or a control PC with a GPU, is a different job with
+its own pitfalls — udev rules for the serial devices, DRM permissions for the
+face panel, CUDA versions, and getting two machines into one ROS graph over
+WiFi. That is all in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
 ```bash
 docker compose run --rm dev bash
 ```
@@ -222,6 +373,56 @@ Add object detection and semantic labelling:
 
 ```bash
 ros2 launch burgerbot_bringup testbed.launch.py use_perception:=true
+```
+
+Companion demo — an 8×6 m room with two walking actors, one who comes over and
+one who keeps leaving:
+
+```bash
+ros2 launch burgerbot_bringup testbed.launch.py world_name:=social_room use_companion:=true
+```
+
+`use_companion` implies `use_perception` and turns exploration off: both
+dispatch goals to Nav2 and the last one to send wins, so running them together
+is two behaviours taking turns at random rather than a blend of them.
+
+Watch what it is thinking, and why:
+
+```bash
+ros2 topic echo /companion/social_state
+```
+
+Stop it doing whatever it is doing around people, without restarting anything:
+
+```bash
+ros2 topic pub --once /companion/enable std_msgs/Bool "{data: false}"
+```
+
+Teach it a face (stand in front of the camera and turn your head slowly; the
+call blocks while it captures):
+
+```bash
+ros2 service call /face_identity/enroll burgerbot_msgs/srv/EnrollPerson "{name: mark}"
+```
+
+Talk to it (needs a model server — see
+[docs/INSTALL.md](docs/INSTALL.md) section C):
+
+```bash
+ros2 launch burgerbot_bringup testbed.launch.py world_name:=social_room use_dialog:=true
+```
+
+then, in a second terminal:
+
+```bash
+ros2 run burgerbot_dialog dialog_cli
+```
+
+Teach it somewhere by driving there and naming it. This is what makes "go to
+the kitchen" mean anything — nothing infers room labels:
+
+```bash
+ros2 service call /dialog_manager/name_place burgerbot_msgs/srv/NamePlace "{name: kitchen}"
 ```
 
 On the real robot:
@@ -258,26 +459,113 @@ fits a Pi 4 comfortably.
 ```
 burgerbot_ws/src/
   burgerbot_bringup       Top-level launches: real robot, simulation, testbed
+  burgerbot_companion     Social behaviour, person heatmap, per-person memory
   burgerbot_controller    Diff-drive control, twist_mux, noisy-odometry demo
-  burgerbot_description   URDF, meshes, Gazebo worlds (test_room, tugbot_warehouse)
+  burgerbot_dialog        Local-LLM conversation, place naming
+  burgerbot_description   URDF, meshes, Gazebo worlds (test_room, social_room, tugbot_warehouse)
   burgerbot_exploration   Frontier-based autonomous mapping
   burgerbot_expressions   Mood arbitration and expressive gestures
   burgerbot_face          Procedural face renderer for the 7" panel
   burgerbot_firmware      Pico serial interface, ros2_control hardware, IMU
   burgerbot_localization  EKF sensor fusion and AMCL
   burgerbot_mapping       slam_toolbox, map saving, saved maps
-  burgerbot_msgs          Expression, gaze, touch and semantic interfaces
+  burgerbot_msgs          Expression, gaze, touch, semantic and person interfaces
   burgerbot_navigation    Nav2 configuration and behaviour trees
-  burgerbot_perception    Object detection, 3D projection, semantic map
+  burgerbot_perception    Object detection, 3D projection, semantic map, person tracking
   burgerbot_utils         Lidar-based safety stop
 docker/                   Container image and entrypoint
 scripts/                  Model export, demo capture, container helper
 docs/media/               README animations
 ```
 
+The judgement in each package lives in a module with no ROS import, unit tested
+on synthetic input: `frontier.py`, `arbiter.py`, `gestures.py`, `clustering.py`,
+`person_tracking.py`, `projection.py`, `identity.py`, `social.py`, `heatmap.py`,
+`schema.py`, `prompt.py`, `conversation.py`, `places.py`.
+That matters most for the companion, because you cannot ask somebody to walk
+away from a robot three times on cue, and certainly not reproducibly.
+
+```bash
+colcon test --packages-select burgerbot_companion burgerbot_dialog burgerbot_perception burgerbot_expressions burgerbot_exploration
+```
+
 ---
 
 ## Notes
+
+### What the companion stack has and has not been shown to do
+
+The pure logic is covered by unit tests — tracking, association, rejection
+accounting, proxemics, the heatmap, identity voting, gesture balance. The parts
+that need a running graph have not been executed, and three of them are worth
+knowing about before the first run:
+
+**Gazebo actors have no collision geometry.** The camera sees them, which is
+what the entire social stack runs on, but the **lidar does not**. They never
+appear in the costmap, never trigger the safety stop, and the robot will drive
+straight through one. In `social_room` the only thing keeping it off a person is
+the companion's own standoff. On the real robot the lidar does see people and
+both Nav2's obstacle layer and `burgerbot_utils`' safety stop apply — so a clean
+run in that world is evidence the *behaviour* is right, and is not evidence the
+robot is safe around people. Those are separate claims and the sim can only
+support the first.
+
+**Whether YOLOv8n calls the actor mesh a `person` is unverified.** It is a
+low-poly textured human and it may well score below the 0.30 threshold in
+`people.yaml`. If tracks never appear, that is the first thing to check —
+`ros2 topic echo /perception/detections2d` — and `score_threshold` is the knob.
+The pose model on the GPU path is far more likely to be comfortable with it.
+
+**Timings in `social_room` are calculated, not tuned against a run.** The
+`aloof` actor retreats 2.9 m against a 1.2 m rejection threshold and turns
+around at 2.06 m against a 1.4 m engage distance, so there is margin at both
+ends — but the actual loop timing against Nav2's approach speed has not been
+watched. If the robot reaches the actor and resets its own rejection count, move
+the near waypoint further out.
+
+### The conversation layer has not been run against a model
+
+`burgerbot_dialog`'s pure logic is covered — 109 tests across the validator,
+the turn machine, prompt assembly and place resolution, including the shapes a
+local model actually returns when it misbehaves. What has **not** happened is a
+single round trip against a real Ollama or vLLM endpoint, because there is no
+GPU on the machine this was written on.
+
+So expect the first run to need prompt tuning rather than code changes, and
+expect two specific things to be where it goes wrong. `use_schema` sends a JSON
+`response_format`; vLLM honours it, Ollama's support depends on version, and a
+server that rejects the request will fail every turn until it is switched off —
+which is why the validator assumes nothing about what the server promised. And
+the enum-salvage path in `schema.py` is written against how small models are
+*expected* to fail (`"Happy"`, `"gesture: wiggle"`), not against a log of how
+yours actually does. Watch `/dialog/turn` for a while; the `error` field and the
+logged problems are there precisely to make that visible.
+
+### Face data
+
+`face_identity` is the one part of this that stores biometric data, which is why
+it is off by default and why enrolment is an explicit service call naming a
+person rather than automatic clustering of everyone who walks past. The gallery
+lands in `~/.burgerbot/faces.yaml` — outside the repo and outside the maps
+directory, so a `git add -A` cannot sweep somebody's face embeddings into a
+public repository. Per-person affinity and the heatmap live in the same place
+for the same reason.
+
+### A projection fix that changes earlier numbers
+
+`object_projector` was scaling `PinholeCameraModel.projectPixelTo3dRay` — a
+*unit* vector — by the depth value, which places the point at that **range**
+along the ray. An aligned depth image stores Z, the distance along the optical
+axis, not range. The two agree only at the principal point and diverge with
+angle from it, pulling off-centre objects toward the camera by
+`1/sqrt(1 + (dx/fx)² + (dy/fy)²)` — a couple of percent near the middle of the
+frame, about 12% at the corner of a 640×480 image. Both projectors now share
+`projection.py`, which does it correctly.
+
+The chair figures under **Verified results** predate that fix. It sits near the
+centre of frame where the error is small, and its 0.2 m offset is dominated by
+bbox-centre depth sampling as described there, so the numbers should move only
+slightly — but they were measured with the old maths and have not been remeasured.
 
 The demo GIFs are captured by subscribing to ROS topics
 (`scripts/capture_demo_gifs.py`), not by screen-recording Gazebo. Desktop

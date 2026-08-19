@@ -1,0 +1,34 @@
+# Record wherever the robot is standing right now under a name.
+#
+#   ros2 service call /dialog_manager/name_place \
+#       burgerbot_msgs/srv/NamePlace "{name: kitchen}"
+#
+# This is how "go to the kitchen" comes to mean anything. The robot has an
+# occupancy grid and a layer of detected objects, and neither of them says that
+# a region *is* a kitchen -- inferring that is a vision-language problem that is
+# not solved here. Driving the robot somewhere and naming it is the version
+# that always works, takes ten seconds, and never mislabels anything.
+#
+# Places persist to ~/.burgerbot/places.yaml, alongside the companion's other
+# state, so they survive a restart.
+
+# Case and surrounding whitespace are not significant. Naming an existing place
+# again moves it to the robot's current pose, which is the useful behaviour when
+# the first attempt was parked slightly wrong.
+string name
+
+# Delete this place instead of recording one. Mirrors EnrollPerson.forget, and
+# exists for the same reason: somebody must be able to undo a mistake without
+# hand-editing a YAML file on a robot that may not have a keyboard attached.
+bool forget false
+
+---
+
+bool success
+string message
+
+# Where it was recorded, in the map frame. Returned so a caller can confirm the
+# robot was actually where it meant to be -- the failure this catches is naming
+# a place while localization is lost, which stores a confident-looking pose that
+# is simply wrong.
+geometry_msgs/Pose pose

@@ -1,0 +1,31 @@
+# Teach the robot a face, or make it forget one.
+#
+# Enrolment is a deliberate act rather than something that happens
+# automatically to everyone the camera sees. Two reasons, and the second is the
+# one that actually decides it:
+#
+#   * Automatically clustering unknown faces fills the gallery with half-seen
+#     strangers and mislabels anyone who passes twice.
+#   * It would mean the robot builds a biometric record of every person who
+#     walks past it, without any of them choosing that. Requiring somebody to
+#     ask, by name, keeps the stored set to people who opted in.
+#
+#   ros2 service call /face_identity/enroll burgerbot_msgs/srv/EnrollPerson \
+#       "{name: mark}"
+#
+# The call blocks while it captures several views, so stand in front of the
+# camera and turn your head slowly until it returns.
+
+string name
+
+# Delete this person instead of enrolling them. The gallery is the only copy;
+# once saved over, the embeddings are gone.
+bool forget false
+
+---
+
+bool success
+string message
+
+# How many stored views this person now has.
+uint32 views

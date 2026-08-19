@@ -7,6 +7,8 @@ from burgerbot_expressions.arbiter import (
     PRIORITY_TASK,
     Candidate,
     MoodArbiter,
+    bid_source,
+    candidate_from_bid,
 )
 
 
@@ -89,3 +91,79 @@ def test_floor_survives_everything_expiring():
     a.submit(_c("ambient", "neutral", PRIORITY_AMBIENT))
     a.submit(_c("nav", "happy", PRIORITY_TASK, expires_at=1.0))
     assert a.evaluate(2.0).expression == "neutral"
+
+
+# ---- bids from other packages --------------------------------------------
+
+
+def test_a_bid_is_namespaced_away_from_the_internal_sources():
+    """A safety behaviour must not be disable-able by a name collision.
+
+    Submitting replaces that source's previous candidate, so an unprefixed bid
+    claiming source="proximity" would take over the startle response with
+    nothing in any log to say it had happened.
+    """
+    arbiter = MoodArbiter(min_hold=0.0)
+    arbiter.submit(
+        Candidate("proximity", "startled", 1.0, PRIORITY_ALERT, stamp=0.0)
+    )
+    arbiter.submit(
+        candidate_from_bid("proximity", "happy", 1.0, PRIORITY_TASK, 0.0, 0.0, now=0.0)
+    )
+    assert arbiter.evaluate(0.1).expression == "startled"
+    assert arbiter.active_sources(0.1) == ["bid:proximity", "proximity"]
+
+
+def test_an_unnamed_bid_still_gets_a_stable_key():
+    first = candidate_from_bid("", "happy", 1.0, PRIORITY_TASK, 0.0, 0.0, now=0.0)
+    second = candidate_from_bid("", "sad", 1.0, PRIORITY_TASK, 0.0, 0.0, now=1.0)
+    assert first.source == second.source == "bid:unknown"
+
+
+def test_a_bid_with_a_duration_expires_on_its_own():
+    arbiter = MoodArbiter(min_hold=0.0)
+    arbiter.submit(Candidate("ambient", "neutral", 1.0, PRIORITY_AMBIENT, stamp=0.0))
+    arbiter.submit(
+        candidate_from_bid("companion", "happy", 1.0, PRIORITY_TASK, 0.0,
+                           duration=1.0, now=0.0)
+    )
+    assert arbiter.evaluate(0.5).expression == "happy"
+    assert arbiter.evaluate(2.0).expression == "neutral"
+
+
+def test_a_bid_without_a_duration_holds_until_replaced():
+    arbiter = MoodArbiter(min_hold=0.0)
+    arbiter.submit(Candidate("ambient", "neutral", 1.0, PRIORITY_AMBIENT, stamp=0.0))
+    arbiter.submit(
+        candidate_from_bid("companion", "happy", 1.0, PRIORITY_TASK, 0.0,
+                           duration=0.0, now=0.0)
+    )
+    assert arbiter.evaluate(1e6).expression == "happy"
+
+
+def test_a_bid_does_not_outrank_a_genuine_concern():
+    """A flat battery matters more than being pleased to see somebody."""
+    arbiter = MoodArbiter(min_hold=0.0)
+    arbiter.submit(Candidate("battery", "sleepy", 1.0, PRIORITY_CONCERN, stamp=0.0))
+    arbiter.submit(
+        candidate_from_bid("companion", "happy", 1.0, 55, 0.0, 0.0, now=0.0)
+    )
+    assert arbiter.evaluate(0.1).expression == "sleepy"
+
+
+def test_a_bid_is_still_beaten_by_an_alert():
+    arbiter = MoodArbiter(min_hold=0.0)
+    arbiter.submit(
+        candidate_from_bid("companion", "happy", 1.0, 110, 0.0, 0.0, now=0.0)
+    )
+    arbiter.submit(Candidate("safety_stop", "startled", 1.0, PRIORITY_ALERT, stamp=0.0))
+    assert arbiter.evaluate(0.1).expression == "startled"
+
+
+def test_clearing_a_bid_uses_the_same_namespaced_key():
+    arbiter = MoodArbiter(min_hold=0.0)
+    arbiter.submit(
+        candidate_from_bid("companion", "happy", 1.0, PRIORITY_TASK, 0.0, 0.0, now=0.0)
+    )
+    arbiter.clear(bid_source("companion"))
+    assert arbiter.evaluate(0.1) is None

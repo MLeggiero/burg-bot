@@ -1,0 +1,49 @@
+# Stable device names for the two USB devices the robot's launch files name
+# directly. Install with:
+#
+#   sudo cp scripts/udev/99-burgerbot.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Both devices enumerate under kernel names that move: /dev/ttyACM0 and
+# /dev/ttyUSB0 are assigned in probe order, so plugging the lidar in before
+# the Pico silently swaps them and the robot drives on lidar data or tries to
+# scan through the motor controller. Neither failure is obvious from the logs.
+#
+# BEFORE TRUSTING THIS FILE, CHECK YOUR OWN IDs. Vendor/product pairs differ
+# between board revisions and firmware stacks, and a rule that matches nothing
+# fails silently -- you get no symlink and a launch error pointing at a device
+# path with no explanation of why it is absent. With the device plugged in:
+#
+#   udevadm info -a -n /dev/ttyACM0 | grep -m2 -E 'idVendor|idProduct'
+#
+# Then confirm the rules took:
+#
+#   ls -l /dev/burgerbot_pico /dev/rplidar
+#
+# GROUP="dialout" rather than MODE="0666": the ports should be readable by
+# somebody in the group, not by everything on the machine. Add yourself once
+# with `sudo usermod -aG dialout $USER`, then log out and back in -- group
+# membership is only picked up at login, which is why this appears not to work
+# until you do.
+
+# --- Raspberry Pi Pico: motor commands and encoder counts over CDC serial ---
+# Referenced as /dev/burgerbot_pico by
+# burgerbot_description/urdf/burgerbot_ros2_control.xacro.
+#
+# 2e8a is Raspberry Pi's vendor ID. The product ID depends on what the Pico is
+# running: 000a for the Pico SDK's stdio-USB, 0005 for MicroPython, 0003 while
+# it is in BOOTSEL mode (which is a mass-storage device, not a tty, so it will
+# not match this rule -- that is correct, there is nothing to talk to then).
+# Matching on vendor alone covers all firmware choices; add
+# ATTRS{idProduct}=="000a" if you have another Raspberry Pi USB device attached
+# and the symlink lands on the wrong one.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", SYMLINK+="burgerbot_pico", GROUP="dialout", MODE="0660"
+
+# --- RPLIDAR A1: scans over a CP2102 USB-UART bridge ---
+# Referenced as /dev/rplidar by burgerbot_bringup/config/rplidar_a1.yaml.
+#
+# 10c4:ea60 is the Silicon Labs CP2102, which is what the A1's USB adapter
+# uses. It is a very common bridge chip, so if you have another CP2102 device
+# on the robot this will match both -- narrow it with the serial number that
+# `udevadm info` reports, via ATTRS{serial}=="...".
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="rplidar", GROUP="dialout", MODE="0660"

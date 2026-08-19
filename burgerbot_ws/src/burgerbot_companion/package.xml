@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>burgerbot_companion</name>
+  <version>0.0.0</version>
+  <description>
+    Human-aware companion behaviour: who to attend to, when to approach, when
+    to dance, and when to stop pestering somebody who keeps walking away.
+
+    All of the judgement lives in social.py and heatmap.py, which have no ROS
+    dependency and are unit tested on synthetic people -- the same pure-logic
+    split burgerbot_expressions uses for gestures and burgerbot_exploration
+    uses for frontiers. It matters more here than anywhere else in this
+    workspace, because you cannot ask somebody to walk away from a robot three
+    times on cue, and certainly not reproducibly.
+
+    Sits on top of everything else and is required by none of it. Expression
+    goes through mood_arbiter's bid inlet rather than straight to the face,
+    body motion goes through the gesture server's feasibility gate, and
+    approaches go through Nav2 -- so every existing safety and arbitration
+    layer still applies to a robot that has started following people around.
+  </description>
+  <maintainer email="mark.leggiero1@gmail.com">Mark Leggiero</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>burgerbot_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros</depend>
+  <depend>python3-yaml</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
